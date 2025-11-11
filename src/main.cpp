@@ -180,6 +180,8 @@ double rpm_fark = 0;
 /****************************/
 // extern void vApplicationStackOverflowHook( xTaskHandle pxTask, signed char *pcTaskName );
 //  ConfigCHECK_FOR_STACK_OVERFLOW
+void DutyHesaplama();
+void MotorBekletme();
 bool connectToServer();                  ////ble telefona bağlanma işleminde devreye girer ve duruma göre true döndürür.
 void adim_oku();                         // bldc motorun encoderını okur ve adımını belirler
 void rpm_tespit_fn();                    // motor rpm ölçümü esnasında encoderdan gelen bilgiler parazt kaynaklı ise rpm ölçümü yaptırmaz
@@ -607,54 +609,13 @@ void motor_ilk_tahrik(void *arg)
   }
 
   hata = (hedef_sure - bobin_fark_sure);
-
-  // if (hata > 20000)
-  // {
-  //  hata = 20000;
-  // }
-  // if (hata < -20000)
-  // {
-  //  hata = -20000;
-  // }
-  // printf("hata = %.2f\n", hata);
-  duty = duty - (hata * duty_Kp) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
-
-  if (duty > max_duty)
-  {
-   duty = max_duty;
-  }
-  if (duty < min_duty)
-  {
-   duty = min_duty;
-  }
-
-  hesaplanan = duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-
-  if (hesaplanan > max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage))
-  {
-   hesaplanan = max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-  }
-
-  if (hesaplanan > motor_i_t_max_duty)
-  {
-   hesaplanan = motor_i_t_max_duty;
-  }
-  hesaplanan -= 2 * amper_siniri_func();
-  if (hesaplanan < hesaplanan_min_duty)
-  {
-   hesaplanan = hesaplanan_min_duty;
-  }
-  // if (duty > hesaplanan)
-  // {
-  //  duty = hesaplanan;
-  // }
+DutyHesaplama();
 
   xSemaphoreTake(UartMutex, portMAX_DELAY);
   Serial.print("hesaplanan : ");
   Serial.println(hesaplanan);
   Serial.print("MiT ");
   xSemaphoreGive(UartMutex);
-  motor_surme(hesaplanan);
   vTaskDelay(1 / portTICK_RATE_MS);
   eski_adim = adim;
 
@@ -1325,7 +1286,72 @@ eRunning = 0,	/*!< A task is querying the state of itself, so must be running.
   }
  }
 }
+void DutyHesaplama()
+{
+ if(rpm>0)rpmTespit=0;
+   float gain_scale = 1.0;
+  if (rpm < 300) gain_scale = 1.6;
+  if (rpm < 150) gain_scale = 1.4;
 
+  double hata = (hedef_sure - bobin_fark_sure);
+  if (fabs(hata) < 2000)
+      hata = 0;
+
+  double delta = -(hata * duty_Kp * gain_scale)
+                 - ((hata - eski_hata) * Kd * gain_scale)
+                 - amper_siniri_func()
+                 - ((!digitalRead(fault)) * duty * 0.1);
+  eski_hata = hata;
+
+  duty += delta;
+
+  if (duty < min_duty) duty = min_duty;
+  if (duty > max_duty) duty = max_duty;
+
+  // İsteğe bağlı filtreleme
+  static float duty_filtered = min_duty;
+  duty_filtered = duty_filtered * 0.8f + duty * 0.2f;
+  hesaplanan=duty_filtered;
+  motor_surme(duty_filtered);
+}
+void MotorBekletme()
+{
+    static double hata_integral = 0;
+    static double hata_eskisi = 0;
+
+  // PID hesapları
+  double hata = (bobin_fark_sure - hedef_sure) / hedef_sure;
+  hata_integral = constrain(hata_integral + hata, -5.0, 5.0);
+  double hata_turev = hata - hata_eskisi;
+  hata_eskisi = hata;
+
+  const double Kp = 0.4;
+  const double Ki = 0.05;
+  const double Kd = 0.15;
+
+  double pid_raw = (Kp*hata + Ki*hata_integral + Kd*hata_turev);
+
+  // Dengeleme: hızlanma az, yavaşlama güçlü
+  if (pid_raw > 0)
+      pid_raw = pow(pid_raw, 1.4);
+  else
+      pid_raw = pid_raw * 0.2;
+
+  // Dinamik limitler
+  double min_sure = hedef_sure * 0.4;
+  double max_sure = hedef_sure * 2.0;
+
+  // Ek güvenlik offseti
+  double sure_pid = hedef_sure * (0.2 + (1 + pid_raw) * 0.8);
+  sure_pid = constrain(sure_pid, min_sure, max_sure);
+  sure_global=sure_pid-bobin_fark_sure;
+  // Zaman bekleme
+ unsigned long t0 = micros();
+ while (micros() - t0 < (sure_pid - bobin_fark_sure)) {
+     delayMicroseconds(1);
+ }
+
+}
 void kapi_ac_fonksiyonu()
 {
  if (ac_test_aktif == true) // kapatırken baki yediyse kapatırken soket arızasına bakar
@@ -1342,7 +1368,7 @@ void kapi_ac_fonksiyonu()
   if (bobin_fark_sure < (-hedef_sure))
   {
    bobin_fark_sure = (-hedef_sure);
-  }dsadasd
+  }
   int32_t adim_tasi = adim_sayisi;
 
   if (adim_tasi < 0)
@@ -1372,73 +1398,11 @@ void kapi_ac_fonksiyonu()
     {
      hata = 20000;
     }
-    duty = duty - (hata * duty_Kp + (hata - eski_hata) * Kd) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
-    eski_hata = hata;
-    if (duty < min_duty && tanima_hizi_flag == false)
-    {
-     duty = min_duty;
-    }
-    if (duty > max_duty && tanima_hizi_flag == false)
-    {
-     duty = max_duty;
-    }
-    if (duty < 100 && tanima_hizi_flag == true)
-    {
-     duty = 100;
-    }
+    //duty = duty - (hata * duty_Kp + (hata - eski_hata) * Kd) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
+   DutyHesaplama();
 
-    fren = 0;
-    if (voltaj > set_voltage + 2)
-    {
-     fren = (rpm - Max_RPM);
-    }
 
-    hesaplanan = duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-    COZUNURLUK = 2048 + fren; // kapı ittirildiğinde fren yaptırıyor.
-                              // hesaplanan-=amper_siniri_func();
-    if (hesaplanan > max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage))
-    {
-     hesaplanan = max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-    }
-    if (hesaplanan < hesaplanan_min_duty)
-    {
-     hesaplanan = hesaplanan_min_duty;
-    }
-    eski_hata = hata;
-
-    motor_surme(hesaplanan);
-    static double hata_integral = 0;
-    static double hata_eskisi = 0;
-// PID hesapları
-double hata = (bobin_fark_sure - hedef_sure) / hedef_sure;
-hata_integral = constrain(hata_integral + hata, -5.0, 5.0);
-double hata_turev = hata - hata_eskisi;
-hata_eskisi = hata;
-
-const double Kp = 0.4;
-const double Ki = 0.05;
-const double Kd = 0.15;
-
-double pid_raw = (Kp*hata + Ki*hata_integral + Kd*hata_turev);
-
-// Dengeleme: hızlanma az, yavaşlama güçlü
-if (pid_raw > 0)
-    pid_raw = pow(pid_raw, 1.4);
-else
-    pid_raw = pid_raw * 0.2;
-
-// Dinamik limitler
-double min_sure = hedef_sure * 0.4;
-double max_sure = hedef_sure * 2.0;
-
-// Ek güvenlik offseti
-double sure_pid = hedef_sure * (0.2 + (1 + pid_raw) * 0.8);
-sure_pid = constrain(sure_pid, min_sure, max_sure);
-sure_global=sure_pid;
-// Zaman bekleme
-unsigned long t0 = micros();
-while (micros() - t0 < sure_pid)
-    delayMicroseconds(50);
+    MotorBekletme();
 
 
    }
@@ -1450,34 +1414,10 @@ while (micros() - t0 < sure_pid)
      hata = 20000;
     }
 
-    duty = duty - (hata * duty_Kp + (hata - eski_hata) * Kd) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
-    eski_hata = hata;
-    if (duty > max_duty && tanima_hizi_flag == false)
-    {
-     duty = max_duty;
-    }
-    if (duty < min_duty && tanima_hizi_flag == false)
-    {
-     duty = min_duty;
-    }
-    if (duty > 400 && tanima_hizi_flag == true)
-    {
-     duty = 400;
-    }
-
-    hesaplanan = duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-
-    if (hesaplanan > max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage))
-    {
-     hesaplanan = max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-    }
-    if (hesaplanan < hesaplanan_min_duty)
-    {
-     hesaplanan = hesaplanan_min_duty;
-    }
-
-    double a = bobin_ortalama_alma((hedef_sure - bobin_fark_sure));
-    motor_surme(hesaplanan);
+    // duty = duty - (hata * duty_Kp + (hata - eski_hata) * Kd) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
+    // eski_hata = hata;
+     
+    DutyHesaplama();
    }
   }
  }
@@ -1506,6 +1446,7 @@ while (micros() - t0 < sure_pid)
    {
     Serial.println();
     Serial.println("kapi ilerledi..");
+    rpmTespit=0;
     // duty = motor_baslangic_duty;
     client_data[client_ac_index] = 1;
     break;
@@ -1570,7 +1511,7 @@ while (micros() - t0 < sure_pid)
    zaman_timeout = 0;
    Serial.println("time out basladi");
    PrintLog("time+out+basladi");
-   while (adim_sayisi >= maksimum_kapi_boyu)
+   while (adim_sayisi >= (maksimum_kapi_boyu-10))
    {
     zaman_timeout++;
     if (zaman_timeout <= acik_kalma_suresi)
@@ -1744,68 +1685,9 @@ void kapi_kapa_fonksiyonu()
   if (hedef_sure > bobin_fark_sure)
   {
    hata = (hedef_sure - bobin_fark_sure);
-   duty = duty - (hata * duty_Kp + (hata - eski_hata) * Kd) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
+  DutyHesaplama();
 
-   eski_hata = hata;
-   if (duty < min_duty)
-   {
-    duty = min_duty;
-   }
-
-   hesaplanan = duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-
-   if (hesaplanan > max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage))
-   {
-    hesaplanan = max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-   }
-
-   if (hesaplanan < hesaplanan_min_duty)
-   {
-    hesaplanan = hesaplanan_min_duty;
-   }
-
-   fren = 0;
-   if (voltaj > set_voltage + 2)
-   {
-    fren = (rpm - Max_RPM);
-   }
-
-   //COZUNURLUK = 2048 + fren;
-
-   motor_surme(hesaplanan);
-   static double hata_integral = 0;
-   static double hata_eskisi = 0;
-// PID hesapları
-double hata = (bobin_fark_sure - hedef_sure) / hedef_sure;
-hata_integral = constrain(hata_integral + hata, -5.0, 5.0);
-double hata_turev = hata - hata_eskisi;
-hata_eskisi = hata;
-
-const double Kp = 0.3;
-const double Ki = 0.02;
-const double Kd = 0.15;
-
-double pid_raw = (Kp*hata + Ki*hata_integral + Kd*hata_turev);
-
-// Dengeleme: hızlanma az, yavaşlama güçlü
-if (pid_raw > 0)
-    pid_raw = pow(pid_raw, 1.4);
-else
-    pid_raw = pid_raw * 0.2;
-
-// Dinamik limitler
-double min_sure = hedef_sure * 0.4;
-double max_sure = hedef_sure * 2.0;
-
-// Ek güvenlik offseti
-double sure_pid = hedef_sure * (0.2 + (1 + pid_raw) * 0.8);
-sure_pid = constrain(sure_pid, min_sure, max_sure);
-sure_global=sure_pid;
-// Zaman bekleme
-unsigned long t0 = micros();
-while (micros() - t0 < sure_pid)
-    delayMicroseconds(50);
-
+   MotorBekletme();
 
   }
 
@@ -1814,41 +1696,8 @@ while (micros() - t0 < sure_pid)
 
    hata = (hedef_sure - bobin_fark_sure);
 
-   duty = duty - (hata * duty_Kp + (hata - eski_hata) * Kd) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1);
-   eski_hata = hata;
-   if (adim_sayisi <= hizlanma_boy_baslangici)
-   {
-    if (duty > max_duty)
-    {
-     duty = max_duty;
-    }
-    if (duty < min_duty)
-    {
-     duty = min_duty;
-    }
-   }
-   else
-   {
-    if (duty > kapama_max_duty)
-    {
-     duty = kapama_max_duty;
-    }
-   }
+  DutyHesaplama();
 
-   hesaplanan = duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-
-   if (hesaplanan > max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage))
-   {
-    hesaplanan = max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-   }
-   if (hesaplanan < hesaplanan_min_duty)
-   {
-    hesaplanan = hesaplanan_min_duty;
-   }
-
-   double a = bobin_ortalama_alma((hedef_sure - bobin_fark_sure));
-
-   motor_surme(hesaplanan);
   }
  }
 
@@ -1858,6 +1707,9 @@ while (micros() - t0 < sure_pid)
   hedef_sure = 60.0 * 1000000.0 / (Max_RPM * tur_sayisi);
 
   Serial.println("rpm sifir tespit edildi..");
+  rpmTespit++;
+  if(rpmTespit<10){
+
   if (adim_sayisi < kapanma_guncelleme_noktasi) // belirli bir adımın altında baskı yerse kapı kapanma noktasını gümcelletiriyoruz
   {
    Serial.println("kapat kilit sonrasi timeout a girildi..");
@@ -1873,6 +1725,7 @@ while (micros() - t0 < sure_pid)
     {
      Serial.println();
      Serial.print("kapi ilerledi : ");
+     rpmTespit=0;
      // duty = motor_baslangic_duty;
      // PrintLog("kapi+ilerledi");
      // vTaskDelay(10 / portTICK_RATE_MS);
@@ -1934,6 +1787,7 @@ while (micros() - t0 < sure_pid)
     if (adim_sayisi < (zorlama_adim_sayisi - 5) || ac_flag == true) // motor tahrik verildiğinde ilerliyorsa döngüden çıkacak
     {
      Serial.println();
+     rpmTespit=0;
      Serial.print("kapi 5 adim ilerledi : ");
      client_data[client_kapa_index] = 1;
      // PrintLog("kapı+5+adım+ilerledi");
@@ -1970,6 +1824,8 @@ while (micros() - t0 < sure_pid)
      break;
     }
    }
+  }
+ 
   }
  }
 
@@ -2190,6 +2046,7 @@ void ilk_kapi_kapanma()
    {
     Serial.println();
     Serial.print("kapı ilerledi : ");
+    rpmTespit=0;
     // vTaskDelay(10 / portTICK_RATE_MS);
     break;
    }

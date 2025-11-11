@@ -11,6 +11,7 @@ double Kd = 0.01;
 double sure_global = 0;
 double sure_integral=0;
    double sure;
+   int rpmTespit=0;
 #define ac_button_ofset 0
 #define kapi_ac 0
 #define kapi_kapa 1
@@ -18,7 +19,7 @@ int kapi_acma_derecesi = 150;
 #define tur_sayisi 24
 #define kapat_hareketi_ofset 5
 #define max_duty 1500
-#define min_duty 300
+#define min_duty 100
 #define hiz_katsayisi 15 // mobil uygulamadan gelen hız bu katsayı ile çarpılıp rpm e dönüştürülüyor
 #define bekleme_duty 50
 #define set_voltage 30
