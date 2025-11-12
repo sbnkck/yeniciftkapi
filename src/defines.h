@@ -5,7 +5,7 @@
 #define EDL_select true//6edl sistemine geçildiğinde aktif edilmeli
 #define AKIM_V2 ture//LMV 321 li devremiz kullanılmaya başladığında aktif edilmeli
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
-double duty_Kp = 0.001;
+double duty_Kp = 0.0001;
 double sure_Kp = 0.5;
 double Kd = 0.01;
 double sure_global = 0;
@@ -20,7 +20,7 @@ int kapi_acma_derecesi = 150;
 #define kapat_hareketi_ofset 5
 #define max_duty 1500
 #define min_duty 100
-#define hiz_katsayisi 15 // mobil uygulamadan gelen hız bu katsayı ile çarpılıp rpm e dönüştürülüyor
+#define hiz_katsayisi 10 // mobil uygulamadan gelen hız bu katsayı ile çarpılıp rpm e dönüştürülüyor
 #define bekleme_duty 50
 #define set_voltage 30
 #define set_volatage_factor 150 // voltaj değişimin duty e etkileceğei oranın katsayısı

@@ -1289,7 +1289,7 @@ eRunning = 0,	/*!< A task is querying the state of itself, so must be running.
 void DutyHesaplama()
 {
  if(rpm>0)rpmTespit=0;
-   float gain_scale = 1.0;
+   float gain_scale = 2.5;
   if (rpm < 300) gain_scale = 1.6;
   if (rpm < 150) gain_scale = 1.4;
 
@@ -2057,10 +2057,11 @@ void ilk_kapi_kapanma()
 void kapi_ac_hazirlik() {
  bobin_fark_sure=0;
  sure=0;
- maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0));
-
+ maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0))/2.5;
+ Max_RPM = EEPROM.read(11);
+  Max_RPM =Max_RPM * hiz_katsayisi;
       const float base_rpm = 75.0;       // taban kalkış RPM
-    const float max_rpm = 300.0;       // açılış üst sınırı
+    const float max_rpm = Max_RPM;       // açılış üst sınırı
     const float ramp_up_ratio = 0.45;  // ilk %25'te hızlanma
     const float ramp_down_ratio = 0.45;// son %25'te yavaşlama
     const int total_steps = maksimum_kapi_boyu;
@@ -2127,7 +2128,7 @@ void rpm_haritasi_olustur_engelli_kapat()
  {
   kapama_max_rpm = 1000;
  }
- maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0);
+ maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0)/2.2;
 
  // hizlanma_boy_baslangici = 200; //kiliten kurtulma noktası
 
@@ -2307,10 +2308,10 @@ void kapi_kapat_hazirlik()
 {
   bobin_fark_sure=0;
  sure=0;
-  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0));
+  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0))/2.5;
 
     const float base_rpm = 75.0;       // kalkış momenti için taban RPM
-    const float max_rpm = 300.0;       // kapama maksimum hızı
+    const float max_rpm = kapama_max_rpm;       // kapama maksimum hızı
     const float ramp_up_ratio = 0.45;  // hızlı kalkış
     const float ramp_down_ratio = 0.45;// uzun yavaşlama
     const int total_steps = maksimum_kapi_boyu;
@@ -3104,7 +3105,7 @@ void ble_data_al()
    Serial.print("ble_gelen_dizi_global[client_derece_index] : ");
    Serial.println(double(ble_gelen_dizi_global[client_derece_index]));
    kapi_acma_derecesi = double(ble_gelen_dizi_global[client_derece_index]) * 2;
-   maksimum_kapi_boyu = (kapi_acma_derecesi) * (10000.0 / 821.0);
+   maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0))/2.5;
    vTaskDelay(500 / portTICK_RATE_MS);
    ac_flag = true;
    bluetooth_kapi_ac = true;
@@ -3128,7 +3129,7 @@ void ble_data_al()
    Serial.print("ble_gelen_dizi_global[client_derece_index] : ");
    Serial.println(double(ble_gelen_dizi_global[client_derece_index]));
    kapi_acma_derecesi = double(ble_gelen_dizi_global[client_derece_index]) * 2;
-   maksimum_kapi_boyu = (kapi_acma_derecesi) * (10000.0 / 821.0);
+   maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0))/2.5;
 
    bluetooth_kapi_kapa = true;
    kapat_flag = true;
@@ -3185,7 +3186,7 @@ void ble_data_al()
     printf("kapama_baski_gucu___________________: %d \n", kapama_baski_gucu);
 
     kapi_acma_derecesi = 90;
-    maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0);
+    maksimum_kapi_boyu = (kapi_acma_derecesi / (82.1 / 1000.0))/2.5;
     EEPROM.write(20, kapi_acma_derecesi / 2);
     printf("kapi_acma_derecesi_vrsyln______________: %d \n", kapi_acma_derecesi);
 
@@ -3287,7 +3288,7 @@ void ble_data_al()
    kapi_acma_derecesi = ble_alinan_deger;
    kapi_acma_derecesi = kapi_acma_derecesi * 2;
    printf("BLE Al Fn: kapi_acma_derecesi = %d \n", kapi_acma_derecesi);
-   // maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0);
+  // maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0);
    printf("BLE Al Fn: maksimum_kapi_boyu = %f \n", maksimum_kapi_boyu);
    break;
 
@@ -3743,7 +3744,7 @@ void eeprom_oku_fn()
  }
  else
  {
-  Max_RPM =150;// Max_RPM * hiz_katsayisi;
+  Max_RPM =Max_RPM * hiz_katsayisi;
 
   printf("acma_hizi___________________________: %d \n", Max_RPM);
  }
@@ -3807,12 +3808,12 @@ void eeprom_oku_fn()
  {                     //  Kapatma Hızı
   kapama_max_rpm = 33; //  Varsayılan Değer = 20
   EEPROM.write(16, kapama_max_rpm);
-  kapama_max_rpm = 150;//kapama_max_rpm * hiz_katsayisi;
+  kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
   printf("kapama_max_rpm_vrsyln__________________: %d \n", kapama_max_rpm);
  }
  else
  {
-  kapama_max_rpm =150;// kapama_max_rpm * hiz_katsayisi;
+  kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
   printf("kapama_max_rpm_________________________: %d \n", kapama_max_rpm);
  }
 
@@ -3863,16 +3864,16 @@ void eeprom_oku_fn()
  kapi_acma_derecesi = EEPROM.read(20); //  EEPROM(20) Okunuyor.
  if (kapi_acma_derecesi > 200)
  {                          //  Kapı Açma Açısı
-  kapi_acma_derecesi = 130; //  Varsayılan Değer = 90
-  maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0);
+  kapi_acma_derecesi = 90; //  Varsayılan Değer = 90
+  maksimum_kapi_boyu = (kapi_acma_derecesi / (82.1 / 1000.0))/2.5;
   EEPROM.write(20, kapi_acma_derecesi / 2);
   printf("kapi_acma_derecesi_vrsyln______________: %d \n", kapi_acma_derecesi);
  }
  else
  {
-  kapi_acma_derecesi = kapi_acma_derecesi * 2;
+  kapi_acma_derecesi = kapi_acma_derecesi*2;
 
-  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0));
+  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0))/2.5;
 
   printf("kapi_acma_derecesi_____________________: %d \n", kapi_acma_derecesi);
  }
@@ -5417,7 +5418,7 @@ void test_func()
 
   temp[0] = amper;
   printf("low amper : %.2f \n", temp[0]);
-  a = 800;
+  a = 1200;
   ledcWrite(kanal1, 2048 - a);
   ledcWrite(kanal2, 2048 + a);
   ledcWrite(kanal3, 2048 + a);
@@ -5477,7 +5478,7 @@ void test_func()
   vTaskDelay(test_time / portTICK_PERIOD_MS);
   temp[0] = amper;
   printf("low amper : %.2f \n", temp[0]);
-  a = 800; // yüksek duty veriyoruz
+  a = 1200; // yüksek duty veriyoruz
   ledcWrite(kanal1, 2048 + a);
   ledcWrite(kanal2, 2048 - a);
   ledcWrite(kanal3, 2048 + a);
@@ -5538,7 +5539,7 @@ void test_func()
   vTaskDelay(test_time / portTICK_PERIOD_MS);
   temp[0] = amper;
   printf("low amper : %.2f \n", temp[0]);
-  a = 800; //300;   ;(04/07-2025 rev);
+  a = 1200; //300;   ;(04/07-2025 rev);
   ledcWrite(kanal1, 2048 + a);
   ledcWrite(kanal2, 2048 + a);
   ledcWrite(kanal3, 2048 - a);
