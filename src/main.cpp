@@ -1289,10 +1289,11 @@ eRunning = 0,	/*!< A task is querying the state of itself, so must be running.
 void DutyHesaplama()
 {
  if(rpm>0)rpmTespit=0;
-   float gain_scale = 2.5;
-  if (rpm < 300) gain_scale = 1.6;
-  if (rpm < 150) gain_scale = 1.4;
-
+   float gain_scale = 5;
+   if ((adim_sayisi < 70) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 0.7;
+     if ((adim_sayisi > 70) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 10;
+  // if (rpm < 150) gain_scale = 2;
+sure_integral=gain_scale;
   double hata = (hedef_sure - bobin_fark_sure);
   if (fabs(hata) < 2000)
       hata = 0;
