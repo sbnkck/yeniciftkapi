@@ -1288,34 +1288,49 @@ eRunning = 0,	/*!< A task is querying the state of itself, so must be running.
 }
 void DutyHesaplama()
 {
- if(rpm>0)rpmTespit=0;
-   float gain_scale = 5;
-  if ((adim_sayisi < 100) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 1;
-  if ((adim_sayisi > 100) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 15;
-  if ((adim_sayisi > 200) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 5;
-  // if (rpm < 150) gain_scale = 2;
-sure_integral=gain_scale;
-  double hata = (hedef_sure - bobin_fark_sure);
-  // if (fabs(hata) < 0)
-  //     hata = 0;
+    if(rpm>0) rpmTespit = 0;
 
-  double delta = -(hata * duty_Kp * gain_scale)
+    float gain_scale = 5;
+    // if ((adim_sayisi < 30) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 1;
+    // if ((adim_sayisi >= 30) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 8; 
+    // if ((adim_sayisi > 200) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 4;
+
+    sure_integral = gain_scale;
+
+    double hata = (hedef_sure - bobin_fark_sure);
+
+    double delta = -(hata * duty_Kp * gain_scale)
                  - ((hata - eski_hata) * Kd * gain_scale);
-                 /*- amper_siniri_func()
-                 - ((!digitalRead(fault)) * duty * 0.1);*/
-  eski_hata = hata;
 
-  duty += delta;
+    eski_hata = hata;
 
-  if (duty < min_duty) duty = min_duty;
-  if (duty > max_duty) duty = max_duty;
+    // --- RPM tabanlı sürtünme kompanzasyonu ---
+    double rpm_error;
+    if(hareket_sinyali==kapi_ac_sinyali) 
+         rpm_error = hedefRPMharitasi[adim_sayisi] - rpm;
+    else 
+         rpm_error = hedefRPMharitasi_kapa[adim_sayisi] - rpm;
 
-  // İsteğe bağlı filtreleme
-  static float duty_filtered = min_duty;
-  duty_filtered = duty_filtered * 0.8f + duty * 0.2f;
-  hesaplanan=duty_filtered;
-  motor_surme(duty_filtered);
+    const double Kf = 0.2;  // güvenli ve stabil katsayı
+
+    double friction_comp = Kf * rpm_error;
+
+    // önce PID
+    duty += delta;
+
+    // sonra sürtünme düzeltmesi
+    duty += friction_comp;
+
+    if (duty < min_duty) duty = min_duty;
+    if (duty > max_duty) duty = max_duty;
+
+    static float duty_filtered = min_duty;
+    duty_filtered = duty_filtered * 0.8f + duty * 0.2f;
+
+    hesaplanan = duty_filtered;
+    motor_surme(duty_filtered);
 }
+
 void MotorBekletme()
 {
     static double hata_integral = 0;
@@ -1400,10 +1415,7 @@ void kapi_ac_fonksiyonu()
     {
      hata = 20000;
     }
-    //duty = duty - (hata * duty_Kp + (hata - eski_hata) * Kd) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
-   DutyHesaplama();
-
-
+    DutyHesaplama();
     MotorBekletme();
 
 
@@ -1449,7 +1461,6 @@ void kapi_ac_fonksiyonu()
     Serial.println();
     Serial.println("kapi ilerledi..");
     rpmTespit=0;
-    // duty = motor_baslangic_duty;
     client_data[client_ac_index] = 1;
     break;
    }
@@ -1472,6 +1483,7 @@ void kapi_ac_fonksiyonu()
     break;
    }
   }
+  duty = motor_baslangic_duty;
  }
 
  /***************************
@@ -1728,12 +1740,11 @@ void kapi_kapa_fonksiyonu()
      Serial.println();
      Serial.print("kapi ilerledi : ");
      rpmTespit=0;
-     // duty = motor_baslangic_duty;
      // PrintLog("kapi+ilerledi");
      // vTaskDelay(10 / portTICK_RATE_MS);
      break;
     }
-
+    
     if (count > (kapama_baski_suresi / 10)) // 1.5 sn bekleyecek açılamazsa kapata geçecek
     {
      Serial.println();
@@ -1743,12 +1754,12 @@ void kapi_kapa_fonksiyonu()
      memset(bobin_ortalama, 0, 6); // başlangıçta ortalama değerleri tutan dizi sıfırlandı.
      adim_sayisi = 0;
      duty = bekleme_duty;
-
+     
      s1_state = digitalRead(encodera);
      s2_state = digitalRead(encoderb);
      s3_state = digitalRead(encoderc);
      adim = ((100 * s1_state) + (10 * s2_state) + (s3_state));
-
+     
      motor_surme(bekleme_duty);
      vTaskDelay(1 / portTICK_RATE_MS);
      PrintLog("Kapi+kapanma+noktasi+guncellendi");
@@ -1764,6 +1775,7 @@ void kapi_kapa_fonksiyonu()
      break;
     }
    }
+   duty = motor_baslangic_duty;
   }
   if (adim_sayisi >= kapanma_guncelleme_noktasi && konsol_aktif_flag == false && digitalRead(fault) == 1)
   {
@@ -1783,7 +1795,6 @@ void kapi_kapa_fonksiyonu()
 
     count++;
     // bobin_eski_sure=micros();
-    // duty=motor_baslangic_duty;
     xTaskCreate(motor_ilk_tahrik, "motor_ilk_tahrik", 2048, NULL, 3, NULL);
     vTaskDelay(10 / portTICK_RATE_MS);
     if (adim_sayisi < (zorlama_adim_sayisi - 5) || ac_flag == true) // motor tahrik verildiğinde ilerliyorsa döngüden çıkacak
@@ -1796,7 +1807,7 @@ void kapi_kapa_fonksiyonu()
      // vTaskDelay(10 / portTICK_RATE_MS);
      break;
     }
-
+    
     if (count > (kapama_baski_suresi / 10)) // ayarlanan  sn kadar bekleyecek kapatılamazsa aça geçecek
     {
      Serial.println("kapatta iken kilit oncesi  time out girildi");
@@ -1817,7 +1828,7 @@ void kapi_kapa_fonksiyonu()
      s2_state = digitalRead(encoderb);
      s3_state = digitalRead(encoderc);
      adim = ((100 * s1_state) + (10 * s2_state) + (s3_state));
-
+     
      motor_surme(50);
      vTaskDelay(10 / portTICK_RATE_MS);
      kapi_basarisiz_kapat_sayac++;
@@ -1826,6 +1837,7 @@ void kapi_kapa_fonksiyonu()
      break;
     }
    }
+   duty=motor_baslangic_duty;
   }
  
   }
@@ -2062,7 +2074,7 @@ void kapi_ac_hazirlik() {
  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0))/2.5;
  Max_RPM = EEPROM.read(11);
   Max_RPM =Max_RPM * hiz_katsayisi;
-      const float base_rpm = 75.0;       // taban kalkış RPM
+      const float base_rpm = 100.0;       // taban kalkış RPM
     const float max_rpm = Max_RPM;       // açılış üst sınırı
     const float ramp_up_ratio = 0.45;  // ilk %25'te hızlanma
     const float ramp_down_ratio = 0.45;// son %25'te yavaşlama
