@@ -1290,18 +1290,19 @@ void DutyHesaplama()
 {
  if(rpm>0)rpmTespit=0;
    float gain_scale = 5;
-   if ((adim_sayisi < 70) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 0.7;
-     if ((adim_sayisi > 70) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 10;
+  if ((adim_sayisi < 100) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 1;
+  if ((adim_sayisi > 100) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 15;
+  if ((adim_sayisi > 200) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 5;
   // if (rpm < 150) gain_scale = 2;
 sure_integral=gain_scale;
   double hata = (hedef_sure - bobin_fark_sure);
-  if (fabs(hata) < 2000)
-      hata = 0;
+  // if (fabs(hata) < 0)
+  //     hata = 0;
 
   double delta = -(hata * duty_Kp * gain_scale)
-                 - ((hata - eski_hata) * Kd * gain_scale)
-                 - amper_siniri_func()
-                 - ((!digitalRead(fault)) * duty * 0.1);
+                 - ((hata - eski_hata) * Kd * gain_scale);
+                 /*- amper_siniri_func()
+                 - ((!digitalRead(fault)) * duty * 0.1);*/
   eski_hata = hata;
 
   duty += delta;
@@ -1349,7 +1350,7 @@ void MotorBekletme()
   // Zaman bekleme
  unsigned long t0 = micros();
  while (micros() - t0 < (sure_pid - bobin_fark_sure)) {
-     delayMicroseconds(1);
+     delayMicroseconds(100);
  }
 
 }
