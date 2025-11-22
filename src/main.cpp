@@ -230,7 +230,7 @@ void ble_data_guncelle();
 /*eprom kayıt işlemini belirli zamnlarda yaptırarak pwm in bozulmasını engelleyen fonk*/
 void eeprom_kontrol();
 /*sayaç işlemlerinin tutulduğu fonk*/
-void sayac_eeprom_yaz();///sayaç değerlerini hafızaya yazar
+void sayac_eeprom_yaz();                      /// sayaç değerlerini hafızaya yazar
 void sayac_sifirla_fn();                      //  Sayaçları sıfırlayan fonksiyondur.
 void print_reset_reason(RESET_REASON reason); //  İşlemcinin son kapanmasında neden kapandığını bize bildiren fonksiyondur.
 /*dc bara ölçümü ya*pan task*/
@@ -240,7 +240,7 @@ void status_led_task(void *arg);
 /*motor akımını okuyan task*/
 static void motor_akim_oku(void *arg);
 /*bel işlemlerinin yürütüldüğü task*/
-static void ble_task(void *arg);//ble süreçlerinin yönetildiği task
+static void ble_task(void *arg);           // ble süreçlerinin yönetildiği task
 void kalibrasyon_fn();                     // kullanılmıyor
 static void led_kontrol_fn(void *arg);     // kapı ledinin nasıl yanacağını ayarlar
 double bobin_ortalama_alma(double fark);   // bobin kesmelerinde oluşan sürelerin ortalmasını alarak motorun daha yumuşak hareket etmesni sağlar
@@ -310,8 +310,8 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
    doScan = true;
 
   } // Found our server
- }  // onResult
-};  // MyAdvertisedDeviceCallbacks
+ } // onResult
+}; // MyAdvertisedDeviceCallbacks
 
 class MyServerCallbacks : public BLEServerCallbacks
 {
@@ -609,8 +609,9 @@ void motor_ilk_tahrik(void *arg)
   }
 
   hata = (hedef_sure - bobin_fark_sure);
-DutyHesaplama();
-
+  motor_ilk_tahrik_flag = true;
+  DutyHesaplama();
+  motor_ilk_tahrik_flag = false;
   xSemaphoreTake(UartMutex, portMAX_DELAY);
   Serial.print("hesaplanan : ");
   Serial.println(hesaplanan);
@@ -1166,7 +1167,7 @@ eRunning = 0,	/*!< A task is querying the state of itself, so must be running.
 
     Serial.print("Max_RPM : ");
     Serial.println(Max_RPM);
-       Serial.print("kapama_max_rpm : ");
+    Serial.print("kapama_max_rpm : ");
     Serial.println(kapama_max_rpm);
 
     Serial.print("maksimum_kapi_boyu : ");
@@ -1288,86 +1289,113 @@ eRunning = 0,	/*!< A task is querying the state of itself, so must be running.
 }
 void DutyHesaplama()
 {
-    if(rpm>0) rpmTespit = 0;
+ if (rpm > 0)
+  rpmTespit = 0;
+ float gain_scale = 5;
+ double Kf = 0.2;
+ if ((hareket_sinyali == kapi_ac_sinyali))
+ {
+  if ((adim_sayisi < 100))
+  {
+   gain_scale = 5;
+   Kf = 0.002;
+   Kd = 0.01;
+   duty_Kp = 0.00001;
+  }
+  if ((adim_sayisi >= 100))
+  {
+   gain_scale = 5;
+   Kf = 0.02;
+   Kd = 0.01;
+   duty_Kp = 0.0001;
+  }
+  if ((adim_sayisi > 200))
+  {
+   gain_scale = 5;
+  }
+ }
+ if (hareket_sinyali == kapi_kapat_sinyali)
+ {
+  duty_Kp = 0.0001;
+ }
+ sure_integral = gain_scale;
 
-    float gain_scale = 5;
-    // if ((adim_sayisi < 30) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 1;
-    // if ((adim_sayisi >= 30) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 8; 
-    // if ((adim_sayisi > 200) && (hareket_sinyali==kapi_ac_sinyali)) gain_scale = 4;
+ double hata = (hedef_sure - bobin_fark_sure);
 
-    sure_integral = gain_scale;
+ double delta = -(hata * duty_Kp * gain_scale) - ((hata - eski_hata) * Kd * gain_scale);
 
-    double hata = (hedef_sure - bobin_fark_sure);
+ eski_hata = hata;
 
-    double delta = -(hata * duty_Kp * gain_scale)
-                 - ((hata - eski_hata) * Kd * gain_scale);
+ // --- RPM tabanlı sürtünme kompanzasyonu ---
+ double rpm_error;
+ if (hareket_sinyali == kapi_ac_sinyali)
+  rpm_error = hedefRPMharitasi[adim_sayisi] - rpm;
+ else
+  rpm_error = hedefRPMharitasi_kapa[adim_sayisi] - rpm;
 
-    eski_hata = hata;
+ // güvenli ve stabil katsayı
 
-    // --- RPM tabanlı sürtünme kompanzasyonu ---
-    double rpm_error;
-    if(hareket_sinyali==kapi_ac_sinyali) 
-         rpm_error = hedefRPMharitasi[adim_sayisi] - rpm;
-    else 
-         rpm_error = hedefRPMharitasi_kapa[adim_sayisi] - rpm;
+ double friction_comp = Kf * rpm_error;
 
-    const double Kf = 0.2;  // güvenli ve stabil katsayı
+ // önce PID
+ duty += delta;
 
-    double friction_comp = Kf * rpm_error;
+ // sonra sürtünme düzeltmesi
+ duty += friction_comp;
 
-    // önce PID
-    duty += delta;
+ if (duty < min_duty)
+  duty = min_duty;
+ if (duty > max_duty)
+  duty = max_duty;
 
-    // sonra sürtünme düzeltmesi
-    duty += friction_comp;
+ static float duty_filtered = min_duty;
+ duty_filtered = duty_filtered * 0.8f + duty * 0.2f;
 
-    if (duty < min_duty) duty = min_duty;
-    if (duty > max_duty) duty = max_duty;
-
-    static float duty_filtered = min_duty;
-    duty_filtered = duty_filtered * 0.8f + duty * 0.2f;
-
-    hesaplanan = duty_filtered;
-    motor_surme(duty_filtered);
+ hesaplanan = duty_filtered;
+ if (motor_ilk_tahrik_flag == true && hesaplanan > hesaplanan_max_duty)
+ {
+  hesaplanan = hesaplanan_max_duty;
+ }
+ motor_surme(duty_filtered);
 }
 
 void MotorBekletme()
 {
-    static double hata_integral = 0;
-    static double hata_eskisi = 0;
+ static double hata_integral = 0;
+ static double hata_eskisi = 0;
 
-  // PID hesapları
-  double hata = (bobin_fark_sure - hedef_sure) / hedef_sure;
-  hata_integral = constrain(hata_integral + hata, -5.0, 5.0);
-  double hata_turev = hata - hata_eskisi;
-  hata_eskisi = hata;
+ // PID hesapları
+ double hata = (bobin_fark_sure - hedef_sure) / hedef_sure;
+ hata_integral = constrain(hata_integral + hata, -5.0, 5.0);
+ double hata_turev = hata - hata_eskisi;
+ hata_eskisi = hata;
 
-  const double Kp = 0.4;
-  const double Ki = 0.05;
-  const double Kd = 0.15;
+ const double Kp = 0.4;
+ const double Ki = 0.05;
+ const double Kd = 0.15;
 
-  double pid_raw = (Kp*hata + Ki*hata_integral + Kd*hata_turev);
+ double pid_raw = (Kp * hata + Ki * hata_integral + Kd * hata_turev);
 
-  // Dengeleme: hızlanma az, yavaşlama güçlü
-  if (pid_raw > 0)
-      pid_raw = pow(pid_raw, 1.4);
-  else
-      pid_raw = pid_raw * 0.2;
+ // Dengeleme: hızlanma az, yavaşlama güçlü
+ if (pid_raw > 0)
+  pid_raw = pow(pid_raw, 1.4);
+ else
+  pid_raw = pid_raw * 0.2;
 
-  // Dinamik limitler
-  double min_sure = hedef_sure * 0.4;
-  double max_sure = hedef_sure * 2.0;
+ // Dinamik limitler
+ double min_sure = hedef_sure * 0.4;
+ double max_sure = hedef_sure * 2.0;
 
-  // Ek güvenlik offseti
-  double sure_pid = hedef_sure * (0.2 + (1 + pid_raw) * 0.8);
-  sure_pid = constrain(sure_pid, min_sure, max_sure);
-  sure_global=sure_pid-bobin_fark_sure;
-  // Zaman bekleme
+ // Ek güvenlik offseti
+ double sure_pid = hedef_sure * (0.2 + (1 + pid_raw) * 0.8);
+ sure_pid = constrain(sure_pid, min_sure, max_sure);
+ sure_global = sure_pid - bobin_fark_sure;
+ // Zaman bekleme
  unsigned long t0 = micros();
- while (micros() - t0 < (sure_pid - bobin_fark_sure)) {
-     delayMicroseconds(100);
+ while (micros() - t0 < (sure_pid - bobin_fark_sure))
+ {
+  delayMicroseconds(100);
  }
-
 }
 void kapi_ac_fonksiyonu()
 {
@@ -1417,8 +1445,6 @@ void kapi_ac_fonksiyonu()
     }
     DutyHesaplama();
     MotorBekletme();
-
-
    }
    if (hedef_sure < bobin_fark_sure)
    {
@@ -1430,7 +1456,7 @@ void kapi_ac_fonksiyonu()
 
     // duty = duty - (hata * duty_Kp + (hata - eski_hata) * Kd) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
     // eski_hata = hata;
-     
+
     DutyHesaplama();
    }
   }
@@ -1460,7 +1486,7 @@ void kapi_ac_fonksiyonu()
    {
     Serial.println();
     Serial.println("kapi ilerledi..");
-    rpmTespit=0;
+    rpmTespit = 0;
     client_data[client_ac_index] = 1;
     break;
    }
@@ -1525,7 +1551,7 @@ void kapi_ac_fonksiyonu()
    zaman_timeout = 0;
    Serial.println("time out basladi");
    PrintLog("time+out+basladi");
-   while (adim_sayisi >= (maksimum_kapi_boyu-10))
+   while (adim_sayisi >= (maksimum_kapi_boyu - 10))
    {
     zaman_timeout++;
     if (zaman_timeout <= acik_kalma_suresi)
@@ -1574,7 +1600,7 @@ void kapi_ac_fonksiyonu()
   PrintLog("actan+kapata+gidildi");
   actan_kapata = true; // kapı acılırken kapa verildiyse true edilmesi gerekiyor
 
-  for (int16_t i = hesaplanan; i > 100; i = i - 10)//yumuşak duruş
+  for (int16_t i = hesaplanan; i > 100; i = i - 10) // yumuşak duruş
   {
    Serial.println(i);
    s1_state = digitalRead(encodera);
@@ -1598,16 +1624,16 @@ void kapi_kapa_fonksiyonu()
   kapat_test_aktif = false;
  }
 
- if (mod == cift_kanat && adim_sayisi < 250 && server_data[client_kilit_index] == 0)//server klit bölgesine gelmediyse
+ if (mod == cift_kanat && adim_sayisi < 250 && server_data[client_kilit_index] == 0) // server klit bölgesine gelmediyse
  {
   motor_surme(200);
-  while (server_data[client_kilit_index] == 0 && ac_flag == false)//ben kilit bölgesine geldim
+  while (server_data[client_kilit_index] == 0 && ac_flag == false) // ben kilit bölgesine geldim
   {
    vTaskDelay(100 / portTICK_RATE_MS);
    client_data[client_kapa_index] = 1;
   }
  }
- if (mod_flag == cift_kanat && (adim_sayisi < 200))//klit bölgesine geldiysen geldiğini söyle
+ if (mod_flag == cift_kanat && (adim_sayisi < 200)) // klit bölgesine geldiysen geldiğini söyle
  {
   server_data[0] = 121;
   server_data[1] = 123;
@@ -1699,10 +1725,9 @@ void kapi_kapa_fonksiyonu()
   if (hedef_sure > bobin_fark_sure)
   {
    hata = (hedef_sure - bobin_fark_sure);
-  DutyHesaplama();
+   DutyHesaplama();
 
    MotorBekletme();
-
   }
 
   if (hedef_sure < bobin_fark_sure)
@@ -1710,8 +1735,7 @@ void kapi_kapa_fonksiyonu()
 
    hata = (hedef_sure - bobin_fark_sure);
 
-  DutyHesaplama();
-
+   DutyHesaplama();
   }
  }
 
@@ -1722,124 +1746,124 @@ void kapi_kapa_fonksiyonu()
 
   Serial.println("rpm sifir tespit edildi..");
   rpmTespit++;
-  if(rpmTespit<10){
-
-  if (adim_sayisi < kapanma_guncelleme_noktasi) // belirli bir adımın altında baskı yerse kapı kapanma noktasını gümcelletiriyoruz
+  if (rpmTespit < 10)
   {
-   Serial.println("kapat kilit sonrasi timeout a girildi..");
-   // PrintLog("kapat+kilit+sonrasi+timeout+a+girildi");
-   int32_t zorlama_adim_sayisi = adim_sayisi;
-   uint16_t count = 0;
-   while (ac_flag == false)
-   {
-    count++;
-    xTaskCreate(motor_ilk_tahrik, "motor_ilk_tahrik", 2048, NULL, 3, NULL);
-    vTaskDelay(10 / portTICK_RATE_MS);
-    if ((adim_sayisi < (zorlama_adim_sayisi - 5)) || ac_flag == true) // motor tahrik verildiğinde ilerliyorsa döngüden çıkacak
-    {
-     Serial.println();
-     Serial.print("kapi ilerledi : ");
-     rpmTespit=0;
-     // PrintLog("kapi+ilerledi");
-     // vTaskDelay(10 / portTICK_RATE_MS);
-     break;
-    }
-    
-    if (count > (kapama_baski_suresi / 10)) // 1.5 sn bekleyecek açılamazsa kapata geçecek
-    {
-     Serial.println();
-     Serial.println("===========Kapi kapanma noktasi guncellendi==============");
-     fault_siniri = 0; // fault ledi kesmesi sistemi durdurma sayacı sıfırlandı
-     baski_duty = kapanma_baski_gucu_min;
-     memset(bobin_ortalama, 0, 6); // başlangıçta ortalama değerleri tutan dizi sıfırlandı.
-     adim_sayisi = 0;
-     duty = bekleme_duty;
-     
-     s1_state = digitalRead(encodera);
-     s2_state = digitalRead(encoderb);
-     s3_state = digitalRead(encoderc);
-     adim = ((100 * s1_state) + (10 * s2_state) + (s3_state));
-     
-     motor_surme(bekleme_duty);
-     vTaskDelay(1 / portTICK_RATE_MS);
-     PrintLog("Kapi+kapanma+noktasi+guncellendi");
-     kapanma_error_flag = false;
-     baski_flag = true;
-     if (hareket_sinyali == kapi_kapat_sinyali)
-     {
-      aydinlatma_led_state = 0;
-     }
-     hareket_sinyali = kapi_bosta_sinyali;
-     kapi_kapat_sayac++;
-     eeproma_yaz_istegi = 1;
-     break;
-    }
-   }
-   duty = motor_baslangic_duty;
-  }
-  if (adim_sayisi >= kapanma_guncelleme_noktasi && konsol_aktif_flag == false && digitalRead(fault) == 1)
-  {
-   Serial.println(" kapat kilit oncesi timeout");
-   // PrintLog("kapat+kilit+oncesi+timeout");
-   int32_t zorlama_adim_sayisi = adim_sayisi;
-   uint16_t count = 0;
-   while (ac_flag == false)
-   {
-    if (count > 5)
-    {
-     if (adim_sayisi < hizlanma_boy_baslangici + 150)
-     {
-      client_data[client_dur_index] = 1;
-     }
-    }
 
-    count++;
-    // bobin_eski_sure=micros();
-    xTaskCreate(motor_ilk_tahrik, "motor_ilk_tahrik", 2048, NULL, 3, NULL);
-    vTaskDelay(10 / portTICK_RATE_MS);
-    if (adim_sayisi < (zorlama_adim_sayisi - 5) || ac_flag == true) // motor tahrik verildiğinde ilerliyorsa döngüden çıkacak
+   if (adim_sayisi < kapanma_guncelleme_noktasi) // belirli bir adımın altında baskı yerse kapı kapanma noktasını gümcelletiriyoruz
+   {
+    Serial.println("kapat kilit sonrasi timeout a girildi..");
+    // PrintLog("kapat+kilit+sonrasi+timeout+a+girildi");
+    int32_t zorlama_adim_sayisi = adim_sayisi;
+    uint16_t count = 0;
+    while (ac_flag == false)
     {
-     Serial.println();
-     rpmTespit=0;
-     Serial.print("kapi 5 adim ilerledi : ");
-     client_data[client_kapa_index] = 1;
-     // PrintLog("kapı+5+adım+ilerledi");
-     // vTaskDelay(10 / portTICK_RATE_MS);
-     break;
-    }
-    
-    if (count > (kapama_baski_suresi / 10)) // ayarlanan  sn kadar bekleyecek kapatılamazsa aça geçecek
-    {
-     Serial.println("kapatta iken kilit oncesi  time out girildi");
-     client_data[client_ac_index] = 1;
-     // vTaskDelay(1500 / portTICK_RATE_MS);
-     ac_test_aktif = true;
-     /**********kapı kapatırken time outa girerse aç sinyali göndeririyoruz***************/
-     hareket_sinyali = kapi_bosta_sinyali;
-     ac_flag = true;
-     bluetooth_kapi_ac = true;
-     engel_algilandi_flag = true;
-     kapanirken_engel_algiladi_flag = true;
-     baski_adimi = adim_sayisi;
-     /*************************************/
-     Max_RPM = tanima_hizi;
-     hedef_sure = 60.0 * 1000000.0 / (Max_RPM * tur_sayisi);
-     s1_state = digitalRead(encodera);
-     s2_state = digitalRead(encoderb);
-     s3_state = digitalRead(encoderc);
-     adim = ((100 * s1_state) + (10 * s2_state) + (s3_state));
-     
-     motor_surme(50);
+     count++;
+     xTaskCreate(motor_ilk_tahrik, "motor_ilk_tahrik", 2048, NULL, 3, NULL);
      vTaskDelay(10 / portTICK_RATE_MS);
-     kapi_basarisiz_kapat_sayac++;
-     kapi_kapat_sayac--;
-     baski_led_flag = true;
-     break;
+     if ((adim_sayisi < (zorlama_adim_sayisi - 5)) || ac_flag == true) // motor tahrik verildiğinde ilerliyorsa döngüden çıkacak
+     {
+      Serial.println();
+      Serial.print("kapi ilerledi : ");
+      rpmTespit = 0;
+      // PrintLog("kapi+ilerledi");
+      // vTaskDelay(10 / portTICK_RATE_MS);
+      break;
+     }
+
+     if (count > (kapama_baski_suresi / 10)) // 1.5 sn bekleyecek açılamazsa kapata geçecek
+     {
+      Serial.println();
+      Serial.println("===========Kapi kapanma noktasi guncellendi==============");
+      fault_siniri = 0; // fault ledi kesmesi sistemi durdurma sayacı sıfırlandı
+      baski_duty = kapanma_baski_gucu_min;
+      memset(bobin_ortalama, 0, 6); // başlangıçta ortalama değerleri tutan dizi sıfırlandı.
+      adim_sayisi = 0;
+      duty = bekleme_duty;
+
+      s1_state = digitalRead(encodera);
+      s2_state = digitalRead(encoderb);
+      s3_state = digitalRead(encoderc);
+      adim = ((100 * s1_state) + (10 * s2_state) + (s3_state));
+
+      motor_surme(bekleme_duty);
+      vTaskDelay(1 / portTICK_RATE_MS);
+      PrintLog("Kapi+kapanma+noktasi+guncellendi");
+      kapanma_error_flag = false;
+      baski_flag = true;
+      if (hareket_sinyali == kapi_kapat_sinyali)
+      {
+       aydinlatma_led_state = 0;
+      }
+      hareket_sinyali = kapi_bosta_sinyali;
+      kapi_kapat_sayac++;
+      eeproma_yaz_istegi = 1;
+      break;
+     }
     }
+    duty = motor_baslangic_duty;
    }
-   duty=motor_baslangic_duty;
-  }
- 
+   if (adim_sayisi >= kapanma_guncelleme_noktasi && konsol_aktif_flag == false && digitalRead(fault) == 1)
+   {
+    Serial.println(" kapat kilit oncesi timeout");
+    // PrintLog("kapat+kilit+oncesi+timeout");
+    int32_t zorlama_adim_sayisi = adim_sayisi;
+    uint16_t count = 0;
+    while (ac_flag == false)
+    {
+     if (count > 5)
+     {
+      if (adim_sayisi < hizlanma_boy_baslangici + 150)
+      {
+       client_data[client_dur_index] = 1;
+      }
+     }
+
+     count++;
+     // bobin_eski_sure=micros();
+     xTaskCreate(motor_ilk_tahrik, "motor_ilk_tahrik", 2048, NULL, 3, NULL);
+     vTaskDelay(10 / portTICK_RATE_MS);
+     if (adim_sayisi < (zorlama_adim_sayisi - 5) || ac_flag == true) // motor tahrik verildiğinde ilerliyorsa döngüden çıkacak
+     {
+      Serial.println();
+      rpmTespit = 0;
+      Serial.print("kapi 5 adim ilerledi : ");
+      client_data[client_kapa_index] = 1;
+      // PrintLog("kapı+5+adım+ilerledi");
+      // vTaskDelay(10 / portTICK_RATE_MS);
+      break;
+     }
+
+     if (count > (kapama_baski_suresi / 10)) // ayarlanan  sn kadar bekleyecek kapatılamazsa aça geçecek
+     {
+      Serial.println("kapatta iken kilit oncesi  time out girildi");
+      client_data[client_ac_index] = 1;
+      // vTaskDelay(1500 / portTICK_RATE_MS);
+      ac_test_aktif = true;
+      /**********kapı kapatırken time outa girerse aç sinyali göndeririyoruz***************/
+      hareket_sinyali = kapi_bosta_sinyali;
+      ac_flag = true;
+      bluetooth_kapi_ac = true;
+      engel_algilandi_flag = true;
+      kapanirken_engel_algiladi_flag = true;
+      baski_adimi = adim_sayisi;
+      /*************************************/
+      Max_RPM = tanima_hizi;
+      hedef_sure = 60.0 * 1000000.0 / (Max_RPM * tur_sayisi);
+      s1_state = digitalRead(encodera);
+      s2_state = digitalRead(encoderb);
+      s3_state = digitalRead(encoderc);
+      adim = ((100 * s1_state) + (10 * s2_state) + (s3_state));
+
+      motor_surme(50);
+      vTaskDelay(10 / portTICK_RATE_MS);
+      kapi_basarisiz_kapat_sayac++;
+      kapi_kapat_sayac--;
+      baski_led_flag = true;
+      break;
+     }
+    }
+    duty = motor_baslangic_duty;
+   }
   }
  }
 
@@ -1949,7 +1973,7 @@ void ilk_kapi_kapanma()
 
  if (bobin_durumu < 4) // bobin kesmesi geldiğinde gerekli işlemleri taskın içersinde yapacak
  {
-  Max_RPM = 350; //ilk kapanma hızı
+  Max_RPM = 150; // ilk kapanma hızı
   hedef_sure = 60.0 * 1000000.0 / (Max_RPM * tur_sayisi);
 
   bobin_durumu = 5;
@@ -2060,7 +2084,7 @@ void ilk_kapi_kapanma()
    {
     Serial.println();
     Serial.print("kapı ilerledi : ");
-    rpmTespit=0;
+    rpmTespit = 0;
     // vTaskDelay(10 / portTICK_RATE_MS);
     break;
    }
@@ -2068,43 +2092,44 @@ void ilk_kapi_kapanma()
  }
 }
 
-void kapi_ac_hazirlik() {
- bobin_fark_sure=0;
- sure=0;
- maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0))/2.5;
+void kapi_ac_hazirlik()
+{
+ bobin_fark_sure = 0;
+ sure = 0;
+ maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0)) / 2.5;
  Max_RPM = EEPROM.read(11);
-  Max_RPM =Max_RPM * hiz_katsayisi;
-      const float base_rpm = 100.0;       // taban kalkış RPM
-    const float max_rpm = Max_RPM;       // açılış üst sınırı
-    const float ramp_up_ratio = 0.45;  // ilk %25'te hızlanma
-    const float ramp_down_ratio = 0.45;// son %25'te yavaşlama
-    const int total_steps = maksimum_kapi_boyu;
+ Max_RPM = Max_RPM * hiz_katsayisi;
+ const float base_rpm = 100.0;       // taban kalkış RPM
+ const float max_rpm = Max_RPM;      // açılış üst sınırı
+ const float ramp_up_ratio = 0.45;   // ilk %25'te hızlanma
+ const float ramp_down_ratio = 0.45; // son %25'te yavaşlama
+ const int total_steps = maksimum_kapi_boyu;
 
-    for (int i = 0; i < total_steps; i++)
-    {
-        float pos = (float)i / total_steps;
-        float rpm;
+ for (int i = 0; i < total_steps; i++)
+ {
+  float pos = (float)i / total_steps;
+  float rpm;
 
-        if (pos < ramp_up_ratio)
-        {
-            // Yumuşak (S-eğrili) kalkış
-            float t = pos / ramp_up_ratio;
-            rpm = base_rpm + (max_rpm - base_rpm) * (0.5 - 0.5 * cos(M_PI * t));
-        }
-        else if (pos < (1.0 - ramp_down_ratio))
-        {
-            // Sabit hız bölgesi
-            rpm = max_rpm;
-        }
-        else
-        {
-            // Yavaşlama bölgesi (parabolik azalış)
-            float t = (1.0 - pos) / ramp_down_ratio;
-            rpm = base_rpm + (max_rpm - base_rpm) * (t * t);
-        }
+  if (pos < ramp_up_ratio)
+  {
+   // Yumuşak (S-eğrili) kalkış
+   float t = pos / ramp_up_ratio;
+   rpm = base_rpm + (max_rpm - base_rpm) * (0.5 - 0.5 * cos(M_PI * t));
+  }
+  else if (pos < (1.0 - ramp_down_ratio))
+  {
+   // Sabit hız bölgesi
+   rpm = max_rpm;
+  }
+  else
+  {
+   // Yavaşlama bölgesi (parabolik azalış)
+   float t = (1.0 - pos) / ramp_down_ratio;
+   rpm = base_rpm + (max_rpm - base_rpm) * (t * t);
+  }
 
-        hedefRPMharitasi[i] = (uint16_t)rpm;
-    }
+  hedefRPMharitasi[i] = (uint16_t)rpm;
+ }
  //    for (uint16_t i = 0; i <= 2000; i++)
  // {
  //  printf("rpm=haritasi : %d : %d  \n ", i, hedefRPMharitasi[i]);
@@ -2142,7 +2167,7 @@ void rpm_haritasi_olustur_engelli_kapat()
  {
   kapama_max_rpm = 1000;
  }
- maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0)/2.2;
+ maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0) / 2.2;
 
  // hizlanma_boy_baslangici = 200; //kiliten kurtulma noktası
 
@@ -2164,7 +2189,7 @@ void rpm_haritasi_olustur_engelli_kapat()
   *          boy baş.                          boy bitis
   *
   *
-  *  
+  *
   * */
 
  Serial.print(" kapama_max_rpm : ");
@@ -2320,48 +2345,46 @@ void rpm_haritasi_olustur_engelli_kapat()
 }
 void kapi_kapat_hazirlik()
 {
-  bobin_fark_sure=0;
- sure=0;
-  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0))/2.5;
+ bobin_fark_sure = 0;
+ sure = 0;
+ maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0)) / 2.5;
 
-    const float base_rpm = 75.0;       // kalkış momenti için taban RPM
-    const float max_rpm = kapama_max_rpm;       // kapama maksimum hızı
-    const float ramp_up_ratio = 0.45;  // hızlı kalkış
-    const float ramp_down_ratio = 0.45;// uzun yavaşlama
-    const int total_steps = maksimum_kapi_boyu;
+ const float base_rpm = 75.0;          // kalkış momenti için taban RPM
+ const float max_rpm = kapama_max_rpm; // kapama maksimum hızı
+ const float ramp_up_ratio = 0.45;     // hızlı kalkış
+ const float ramp_down_ratio = 0.45;   // uzun yavaşlama
+ const int total_steps = maksimum_kapi_boyu;
 
-    for (int i = 0; i < total_steps; i++)
-    {
-        float pos = (float)i / total_steps;
-        float rpm;
+ for (int i = 0; i < total_steps; i++)
+ {
+  float pos = (float)i / total_steps;
+  float rpm;
 
-        if (pos < ramp_up_ratio)
-        {
-            // Hızlı parabolik kalkış
-            float t = pos / ramp_up_ratio;
-            rpm = base_rpm + (max_rpm - base_rpm) * (t * t);
-        }
-        else if (pos < (1.0 - ramp_down_ratio))
-        {
-            rpm = max_rpm;
-        }
-        else
-        {
-            // Baskı bölgesi: çok yumuşak azalma
-            float t = (1.0 - pos) / ramp_down_ratio;
-            rpm = base_rpm + (max_rpm - base_rpm) * (0.5 - 0.5 * cos(M_PI * t));
-        }
+  if (pos < ramp_up_ratio)
+  {
+   // Hızlı parabolik kalkış
+   float t = pos / ramp_up_ratio;
+   rpm = base_rpm + (max_rpm - base_rpm) * (t * t);
+  }
+  else if (pos < (1.0 - ramp_down_ratio))
+  {
+   rpm = max_rpm;
+  }
+  else
+  {
+   // Baskı bölgesi: çok yumuşak azalma
+   float t = (1.0 - pos) / ramp_down_ratio;
+   rpm = base_rpm + (max_rpm - base_rpm) * (0.5 - 0.5 * cos(M_PI * t));
+  }
 
-        hedefRPMharitasi_kapa[i] = (uint16_t)rpm;
-    }
+  hedefRPMharitasi_kapa[i] = (uint16_t)rpm;
+ }
  //       for (uint16_t i = 0; i <= 2000; i++)
  //  {
  //   printf("hedefRPMharitasi_kapa : %d : %d  \n ", i, hedefRPMharitasi_kapa[i]);
  // vTaskDelay(1 / portTICK_RATE_MS);
  // }
 }
-
-
 
 void kilit_ac()
 {
@@ -2594,33 +2617,33 @@ void ble_baslat_fn()
  char ble_name[30];
  sprintf(ble_name, "%s:%s", MACID, proje_no);
  printf("ble_name-------------------------:%s", ble_name);
- if (mod == cift_kanat)
- {
+ // if (mod == cift_kanat)
+ // {
 
-  BLEDevice::init(ble_name); //  Belirlenen MAC ID ile bluetooth hizmeti başlatıldı.
-  // BLEDevice::setPower(ESP_PWR_LVL_P9); //  Bluetooth devresinin güç seviyesi ayarlandı.
-  BLEScan *pBLEScan = BLEDevice::getScan();
-  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-  pBLEScan->setInterval(1349);
-  pBLEScan->setWindow(449);
-  pBLEScan->setActiveScan(true);
-  pBLEScan->start(10, false);
-  if (doConnect == true)
-  {
-   xTaskCreate(ble_client_task, "ble_client_task", 2048 * 4, NULL, 1, &ble_client_task_arg);
-   Serial.println("BLE Baslat Fn: BLE Client Task Basladi");
-  }
-  else
-  {
-   // delay(1000);
-   BLEDevice::getScan()->stop();
-   pBLEScan->stop();
-   // BLEDevice::deinit();
-   Serial.println("BLE kapatildi");
-   // delay(1000);
-   mod = tek_kanat;
-  }
- }
+ //  BLEDevice::init(ble_name); //  Belirlenen MAC ID ile bluetooth hizmeti başlatıldı.
+ //  // BLEDevice::setPower(ESP_PWR_LVL_P9); //  Bluetooth devresinin güç seviyesi ayarlandı.
+ //  BLEScan *pBLEScan = BLEDevice::getScan();
+ //  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+ //  pBLEScan->setInterval(1349);
+ //  pBLEScan->setWindow(449);
+ //  pBLEScan->setActiveScan(true);
+ //  pBLEScan->start(10, false);
+ //  if (doConnect == true)
+ //  {
+ //   xTaskCreate(ble_client_task, "ble_client_task", 2048 * 4, NULL, 1, &ble_client_task_arg);
+ //   Serial.println("BLE Baslat Fn: BLE Client Task Basladi");
+ //  }
+ //  else
+ //  {
+ //   // delay(1000);
+ //   BLEDevice::getScan()->stop();
+ //   pBLEScan->stop();
+ //   // BLEDevice::deinit();
+ //   Serial.println("BLE kapatildi");
+ //   // delay(1000);
+ //   mod = tek_kanat;
+ //  }
+ // }
 
  if (mod == tek_kanat)
  {
@@ -3119,7 +3142,7 @@ void ble_data_al()
    Serial.print("ble_gelen_dizi_global[client_derece_index] : ");
    Serial.println(double(ble_gelen_dizi_global[client_derece_index]));
    kapi_acma_derecesi = double(ble_gelen_dizi_global[client_derece_index]) * 2;
-   maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0))/2.5;
+   maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0)) / 2.5;
    vTaskDelay(500 / portTICK_RATE_MS);
    ac_flag = true;
    bluetooth_kapi_ac = true;
@@ -3143,7 +3166,7 @@ void ble_data_al()
    Serial.print("ble_gelen_dizi_global[client_derece_index] : ");
    Serial.println(double(ble_gelen_dizi_global[client_derece_index]));
    kapi_acma_derecesi = double(ble_gelen_dizi_global[client_derece_index]) * 2;
-   maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0))/2.5;
+   maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0)) / 2.5;
 
    bluetooth_kapi_kapa = true;
    kapat_flag = true;
@@ -3200,7 +3223,7 @@ void ble_data_al()
     printf("kapama_baski_gucu___________________: %d \n", kapama_baski_gucu);
 
     kapi_acma_derecesi = 90;
-    maksimum_kapi_boyu = (kapi_acma_derecesi / (82.1 / 1000.0))/2.5;
+    maksimum_kapi_boyu = (kapi_acma_derecesi / (82.1 / 1000.0)) / 2.5;
     EEPROM.write(20, kapi_acma_derecesi / 2);
     printf("kapi_acma_derecesi_vrsyln______________: %d \n", kapi_acma_derecesi);
 
@@ -3302,7 +3325,7 @@ void ble_data_al()
    kapi_acma_derecesi = ble_alinan_deger;
    kapi_acma_derecesi = kapi_acma_derecesi * 2;
    printf("BLE Al Fn: kapi_acma_derecesi = %d \n", kapi_acma_derecesi);
-  // maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0);
+   // maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0);
    printf("BLE Al Fn: maksimum_kapi_boyu = %f \n", maksimum_kapi_boyu);
    break;
 
@@ -3758,7 +3781,7 @@ void eeprom_oku_fn()
  }
  else
  {
-  Max_RPM =Max_RPM * hiz_katsayisi;
+  Max_RPM = Max_RPM * hiz_katsayisi;
 
   printf("acma_hizi___________________________: %d \n", Max_RPM);
  }
@@ -3877,17 +3900,17 @@ void eeprom_oku_fn()
 
  kapi_acma_derecesi = EEPROM.read(20); //  EEPROM(20) Okunuyor.
  if (kapi_acma_derecesi > 200)
- {                          //  Kapı Açma Açısı
+ {                         //  Kapı Açma Açısı
   kapi_acma_derecesi = 90; //  Varsayılan Değer = 90
-  maksimum_kapi_boyu = (kapi_acma_derecesi / (82.1 / 1000.0))/2.5;
+  maksimum_kapi_boyu = (kapi_acma_derecesi / (82.1 / 1000.0)) / 2.5;
   EEPROM.write(20, kapi_acma_derecesi / 2);
   printf("kapi_acma_derecesi_vrsyln______________: %d \n", kapi_acma_derecesi);
  }
  else
  {
-  kapi_acma_derecesi = kapi_acma_derecesi*2;
+  kapi_acma_derecesi = kapi_acma_derecesi * 2;
 
-  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0))/2.5;
+  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0)) / 2.5;
 
   printf("kapi_acma_derecesi_____________________: %d \n", kapi_acma_derecesi);
  }
@@ -4108,7 +4131,7 @@ void eeprom_oku_fn()
   printf("yon jumper ile mentese yonu ayarlandi_: %d \n", mentese_yonu);
  }
 
- mod = EEPROM.read(79);
+ mod = tek_kanat;
  if (mod > 200)
  {
   mod = tek_kanat; //  Varsayılan Değer  tek kanat
@@ -4815,7 +4838,7 @@ static void motor_akim_oku(void *arg)
  }
 }
 
-void kalibrasyon_fn()//kullanılmıyor
+void kalibrasyon_fn() // kullanılmıyor
 {
 
  int a = 1;
@@ -5073,7 +5096,7 @@ double bobin_ortalama_alma(double fark)
  return ortalama;
 }
 
-//akım değeri yukarı ıkınca sistemi korumak için duty kısılması amacı ile yazıldı
+// akım değeri yukarı ıkınca sistemi korumak için duty kısılması amacı ile yazıldı
 double amper_siniri_func()
 {
  double amper_sinirla = 0;
@@ -5081,7 +5104,7 @@ double amper_siniri_func()
  BaseType_t status;
  double amper_transfer = 0;
  status = xQueueReceive(Amper_Queue, &amper_transfer, 0);
- if (status == pdPASS)//amper değerei hesaplandı ise
+ if (status == pdPASS) // amper değerei hesaplandı ise
  {
   if (adim_sayisi < hizlanma_boy_baslangici) // kilit  noktasında sınıf 2 den aza alınamasın diye
   {
@@ -5553,7 +5576,7 @@ void test_func()
   vTaskDelay(test_time / portTICK_PERIOD_MS);
   temp[0] = amper;
   printf("low amper : %.2f \n", temp[0]);
-  a = 1200; //300;   ;(04/07-2025 rev);
+  a = 1200; // 300;   ;(04/07-2025 rev);
   ledcWrite(kanal1, 2048 + a);
   ledcWrite(kanal2, 2048 + a);
   ledcWrite(kanal3, 2048 - a);

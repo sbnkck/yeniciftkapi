@@ -4,6 +4,7 @@
 #include <string>
 #define EDL_select true//6edl sistemine geçildiğinde aktif edilmeli
 #define AKIM_V2 ture//LMV 321 li devremiz kullanılmaya başladığında aktif edilmeli
+bool motor_ilk_tahrik_flag=false;
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
 double duty_Kp = 0.0001;
 double sure_Kp = 0.5;
@@ -24,7 +25,8 @@ int kapi_acma_derecesi = 150;
 #define bekleme_duty 50
 #define set_voltage 30
 #define set_volatage_factor 150 // voltaj değişimin duty e etkileceğei oranın katsayısı
-#define hesaplanan_min_duty 300
+#define hesaplanan_min_duty 100
+#define hesaplanan_max_duty 500
 #define kapanma_guncelleme_noktasi 100
 #define akim_hesaplanan_siniri 400
 #define acma_siniri 200
