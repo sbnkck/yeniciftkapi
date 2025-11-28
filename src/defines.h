@@ -26,7 +26,7 @@ int kapi_acma_derecesi = 150;
 #define set_voltage 30
 #define set_volatage_factor 150 // voltaj değişimin duty e etkileceğei oranın katsayısı
 #define hesaplanan_min_duty 100
-#define hesaplanan_max_duty 500
+#define hesaplanan_max_duty 200
 #define kapanma_guncelleme_noktasi 100
 #define akim_hesaplanan_siniri 400
 #define acma_siniri 200
@@ -107,7 +107,7 @@ bool bluetooth_kapi_kapa = false;
 //  int bobin_fark_tutucu[1800];
 bool kapanirken_engel_algiladi_flag = false; // kapanırken engel algılandığında aktif edilecek tekrar kapanırken engelli bir rpm haritası oluşturulacak
 int counter_adim = 0;
-#define rampa_yok_cm 300                               // rampa_yok_cm den kısa alanda baskı yediyse harita oluşturmayacak
+#define rampa_yok_cm 100                               // rampa_yok_cm den kısa alanda baskı yediyse harita oluşturmayacak
 double baski_adimi = 0;                                // hangi adımda baski yedi ise o daımı bu değişkende tutacağiz
 uint8_t adim_siralama[6] = {101, 100, 110, 10, 11, 1}; // adimların dizide tutulduğu yer
 int8_t index_adim = 9, index_gecis[6];                 // rpm için karşılaştırmada kullanılacak index değişkenleri

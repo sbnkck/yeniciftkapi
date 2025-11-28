@@ -1292,7 +1292,7 @@ void DutyHesaplama()
  if (rpm > 0)
   rpmTespit = 0;
  float gain_scale = 5;
- double Kf = 0.2;
+ double Kf = 0.007;
  if ((hareket_sinyali == kapi_ac_sinyali))
  {
   if ((adim_sayisi < 100))
@@ -1313,10 +1313,37 @@ void DutyHesaplama()
   {
    gain_scale = 5;
   }
+  if ((adim_sayisi >(maksimum_kapi_boyu-50)))
+  {
+   gain_scale = 5;
+   Kf = 0.002;
+   Kd = 0.001;
+   duty_Kp = 0.00001;
+  }
  }
  if (hareket_sinyali == kapi_kapat_sinyali)
  {
-  duty_Kp = 0.0001;
+  if ((adim_sayisi) > (maksimum_kapi_boyu-100))
+  {
+   gain_scale = 5;
+   duty_Kp = 0.0001;
+   Kd = 0.001;
+   Kf = 0.00007;
+  }
+  if ((adim_sayisi) > (maksimum_kapi_boyu / 2))
+  {
+   gain_scale = 5;
+   duty_Kp = 0.001;
+   Kd = 0.01;
+   Kf = 0.0007;
+  }
+   if (adim_sayisi < (maksimum_kapi_boyu / 2))
+  {
+   gain_scale = 5;
+   duty_Kp = 0.001;
+   Kd = 0.01;
+   Kf = 0.02;
+  }
  }
  sure_integral = gain_scale;
 
@@ -1925,7 +1952,7 @@ void ilk_kapi_kapanma()
   // eeproma_yaz_istegi = 1;
   // }
   adim_oku();
-  Max_RPM = 350; // hedefRPMharitasi_kapa[adim_sayisi]; // hedefRPMharitasi_kapa[adim_tasi];
+  Max_RPM = 150; // hedefRPMharitasi_kapa[adim_sayisi]; // hedefRPMharitasi_kapa[adim_tasi];
   hedef_sure = 60.0 * 1000000.0 / (Max_RPM * tur_sayisi);
   Serial.print("hedef_sure : ");
   Serial.println(hedef_sure);
@@ -1982,32 +2009,7 @@ void ilk_kapi_kapanma()
   if (hedef_sure > bobin_fark_sure)
   {
    hata = (hedef_sure - bobin_fark_sure);
-   duty = duty - (hata * 0.03) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); //+ ((hata - eski_hata) * (100.0 / 5000.0)));
-                                                                                             // eski_hata = hata;
-   if (duty < min_duty)
-   {
-    duty = min_duty;
-   }
-   if (duty > max_duty)
-   {
-    duty = max_duty;
-   }
-
-   hesaplanan = duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-
-   if (hesaplanan > max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage))
-   {
-    hesaplanan = max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-   }
-
-   if (hesaplanan < hesaplanan_min_duty)
-   {
-    hesaplanan = hesaplanan_min_duty;
-   }
-
-   eski_hata = hata;
-
-   motor_surme(hesaplanan);
+   DutyHesaplama();
    vTaskDelay(1 / portTICK_RATE_MS);
    double eski = 0, zaman = 0;
    double sure = hedef_sure - bobin_fark_sure;
@@ -2023,29 +2025,7 @@ void ilk_kapi_kapanma()
   if (hedef_sure < bobin_fark_sure)
   {
    hata = (hedef_sure - bobin_fark_sure);
-   duty = duty - (hata * duty_Kp) - amper_siniri_func() - ((!digitalRead(fault)) * duty * 0.1); // + ((hata - eski_hata) * (100.0 / 5000.0)));
-
-   if (duty > max_duty)
-   {
-    duty = max_duty;
-   }
-   if (duty < min_duty)
-   {
-    duty = min_duty;
-   }
-   hesaplanan = duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-
-   if (hesaplanan > max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage))
-   {
-    hesaplanan = max_duty + ((set_voltage - voltaj) * set_volatage_factor / set_voltage);
-   }
-
-   if (hesaplanan < hesaplanan_min_duty)
-   {
-    hesaplanan = hesaplanan_min_duty;
-   }
-
-   motor_surme(hesaplanan);
+   DutyHesaplama();
    vTaskDelay(1 / portTICK_RATE_MS);
   }
  }
@@ -2096,6 +2076,8 @@ void kapi_ac_hazirlik()
 {
  bobin_fark_sure = 0;
  sure = 0;
+ kapi_acma_derecesi = EEPROM.read(20);
+ kapi_acma_derecesi = kapi_acma_derecesi * 2;
  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0)) / 2.5;
  Max_RPM = EEPROM.read(11);
  Max_RPM = Max_RPM * hiz_katsayisi;
@@ -2347,12 +2329,15 @@ void kapi_kapat_hazirlik()
 {
  bobin_fark_sure = 0;
  sure = 0;
+ kapi_acma_derecesi = EEPROM.read(20);
+ kapi_acma_derecesi = kapi_acma_derecesi * 2;
  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0)) / 2.5;
-
- const float base_rpm = 75.0;          // kalkış momenti için taban RPM
+ kapama_max_rpm = EEPROM.read(16);
+  kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
+ const float base_rpm = 100.0;         // kalkış momenti için taban RPM
  const float max_rpm = kapama_max_rpm; // kapama maksimum hızı
- const float ramp_up_ratio = 0.45;     // hızlı kalkış
- const float ramp_down_ratio = 0.45;   // uzun yavaşlama
+ const float ramp_up_ratio = 0.50;     // hızlı kalkış
+ const float ramp_down_ratio = 0.30;   // uzun yavaşlama
  const int total_steps = maksimum_kapi_boyu;
 
  for (int i = 0; i < total_steps; i++)
