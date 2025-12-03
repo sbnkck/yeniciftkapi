@@ -60,7 +60,7 @@ const int kapat_pini = 23;      // 18;      //  Kapat sintalinin geldiği pindir
 const int ac_pini = 22;         // 22 fotosel veya isin perdesi gpio su
 const int asansor_ac_pini = 18; // 21; //  18 asansorden gelen aç sinyaline göre hareket ettirecek pin
 const int stop_pini = 21;       // 23;       //22;    //  Stop düğmesi için kullanılan pindir.
-const int x1_jumper = 19;       // 23;    //  tork arttırır
+const int Rx = 19;       // 23;    //  tork arttırır
 const int encodera = 34;        //  s1 Encoder pinidir.
 const int encoderb = 35;        //  s2 Encoder pinidir.
 const int encoderc = 32;        //  s3 Encoder pinidir.
@@ -74,12 +74,12 @@ const int fault = 33;           //  2132 entegresinin aşırı akım çekip çek
 #ifdef EDL_select
 const int sense_pini = 39; //  Akım okuyan pindir.
 const int x2_jumper = 36;  // dc barada kullanılıyor
-const int yon_jumper = 5;  //  Başlangıçta tek başına yön ayarlamak için kullanılan jumper kapı yönü ayarlaması için kullanılmaktadır.
+const int Tx = 5;  //  Başlangıçta tek başına yön ayarlamak için kullanılan jumper kapı yönü ayarlaması için kullanılmaktadır.
 
 #else
 const int sense_pini = 36; //  Akım okuyan pindir.
 const int x2_jumper = 39;  // dc barada kullanılıyor
-const int yon_jumper = 17; //  Başlangıçta tek başına yön ayarlamak için kullanılan jumper kapı yönü ayarlaması için kullanılmaktadır.
+// const int yon_jumper = 17; //  Başlangıçta tek başına yön ayarlamak için kullanılan jumper kapı yönü ayarlaması için kullanılmaktadır.
 
 #endif
 
@@ -346,6 +346,7 @@ void setup()
  Amper_Queue = xQueueCreate(5, sizeof(double));
  Serial.begin(115200);      //  Seri Haberleşme başlatıldı.
  EEPROM.begin(eeprom_size); //  EEPROM belirlenen boyutta başlatıldı.
+ Serial1.begin(9600, SERIAL_8N1, Rx,Tx, false, 10); 
  /****************************/
  akim_mutex = xSemaphoreCreateMutex();
  xSemaphoreGive(akim_mutex);
@@ -358,12 +359,12 @@ void setup()
  pinMode(fault, INPUT);     //  GPIO 33 numaralı pin
  pinMode(x2_jumper, INPUT); //  GPIO 39 numaralı pin
  // pinMode(tork_jumper, INPUT);       //  GPIO 15 numaralı pin
- pinMode(yon_jumper, INPUT_PULLUP); //  GPIO 17 numaralı pin
+ // pinMode(yon_jumper, INPUT_PULLUP); //  GPIO 17 numaralı pin
  pinMode(kapat_pini, INPUT);        //  GPIO 18 numaralı pin
  pinMode(ac_pini, INPUT);           //  GPIO 19 numaralı pin
  pinMode(asansor_ac_pini, INPUT);   //  GPIO 21 numaralı pin
  pinMode(stop_pini, INPUT);         //  GPIO 22 numaralı pin
- pinMode(x1_jumper, INPUT_PULLUP);  //  GPIO 23 numaralı pin
+ // pinMode(x1_jumper, INPUT_PULLUP);  //  GPIO 23 numaralı pin
  pinMode(sense_pini, INPUT);        //  GPIO 36 numaralı pin
  /*  OUTPUTLARIN BELİRLENMESİ */
  pinMode(H1, OUTPUT);         //  GPIO 13 numaralı pin
@@ -3910,11 +3911,11 @@ void eeprom_oku_fn()
   // akim_siniri_d_h = akim_siniri * 2;
   printf("kuvvet_siniri_vrsyln____________: %d \n", EEPROM.read(21) * 2);
   printf("asiri_akim_siniri_vrsyln____________: %.1f \n", akim_siniri);
-  if (digitalRead(x1_jumper) == 0)
-  {
-   akim_siniri = akim_siniri + 0.2 * akim_siniri;
-   printf(" x1 takili asiri_akim_siniri_vrsyln____________: %.1f \n", akim_siniri);
-  }
+  // if (digitalRead(x1_jumper) == 0)
+  // {
+  //  akim_siniri = akim_siniri + 0.2 * akim_siniri;
+  //  printf(" x1 takili asiri_akim_siniri_vrsyln____________: %.1f \n", akim_siniri);
+  // }
  }
  else
  {
@@ -3924,11 +3925,11 @@ void eeprom_oku_fn()
   // akim_siniri_d_h = akim_siniri * 2;
   printf("kuvvet_siniri___________________: %d \n", EEPROM.read(21));
   printf("asiri_akim_siniri___________________: %.1f \n", akim_siniri);
-  if (digitalRead(x1_jumper) == 0)
-  {
-   akim_siniri = akim_siniri + 0.2 * akim_siniri;
-   printf(" x1 takili asiri_akim_siniri_vrsyln____________: %.1f \n", akim_siniri);
-  }
+  // if (digitalRead(x1_jumper) == 0)
+  // {
+  //  akim_siniri = akim_siniri + 0.2 * akim_siniri;
+  //  printf(" x1 takili asiri_akim_siniri_vrsyln____________: %.1f \n", akim_siniri);
+  // }
  }
  acik_kalma_suresi = EEPROM.read(22); //  EEPROM(22) Okunuyor.
  if (acik_kalma_suresi > 200)
@@ -4110,11 +4111,11 @@ void eeprom_oku_fn()
   printf("mentese_yonu_____________________: %d \n", mentese_yonu);
  }
 
- if (digitalRead(yon_jumper) == 0)
- {
-  mentese_yonu = sol;
-  printf("yon jumper ile mentese yonu ayarlandi_: %d \n", mentese_yonu);
- }
+ // if (digitalRead(yon_jumper) == 0)
+ // {
+ //  mentese_yonu = sol;
+ //  printf("yon jumper ile mentese yonu ayarlandi_: %d \n", mentese_yonu);
+ // }
 
  mod = tek_kanat;
  if (mod > 200)
@@ -5831,10 +5832,10 @@ void print_log_baslangic()
  PrintLog("adc2________________________________:" + String(adc2));
  PrintLog("carpan______________________________:" + String(carpan));
  PrintLog("mentese_yonu_____________________:" + String(mentese_yonu));
- if (digitalRead(yon_jumper) == 0)
- {
-  PrintLog("yon+jumper+ile+mentese+yonu+ayarlandi+:" + String(mentese_yonu));
- }
+ // if (digitalRead(yon_jumper) == 0)
+ // {
+ //  PrintLog("yon+jumper+ile+mentese+yonu+ayarlandi+:" + String(mentese_yonu));
+ // }
  PrintLog("kapi_ac_sayac_______________________:" + String(kapi_ac_sayac));
  PrintLog("kapi_basarisiz_ac_sayac_____________:" + String(kapi_basarisiz_ac_sayac));
  PrintLog("kapi_kapat_sayac____________________:" + String(kapi_kapat_sayac));
@@ -5932,7 +5933,7 @@ void ble_client_task(void *arg)
     client_data[client_mentese_index] = mentese_yonu;
     client_data[client_acil_stop_index] = digitalRead(stop_pini);
     client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
-    client_data[client_mentese_index] = mentese_yonu;
+    // client_data[client_mentese_index] = mentese_yonu;
     client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
     client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
     client_data[client_push_run_index] = push_run_flag;
