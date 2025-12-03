@@ -5,6 +5,9 @@
 #define EDL_select true//6edl sistemine geçildiğinde aktif edilmeli
 #define AKIM_V2 ture//LMV 321 li devremiz kullanılmaya başladığında aktif edilmeli
 bool motor_ilk_tahrik_flag=false;
+#define MASTER 1
+#define SLAVE 0
+uint8_t kapi_rutbesi=SLAVE;
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
 double duty_Kp = 0.0001;
 double sure_Kp = 0.5;
@@ -312,6 +315,7 @@ TaskHandle_t ble_arg = NULL;
 TaskHandle_t ble_data_al_task_arg = NULL;
 TaskHandle_t ble_client_task_arg = NULL;
 TaskHandle_t tr_mission_task_arg = NULL;
+TaskHandle_t kapi_haberlesme_arg = NULL;
 UBaseType_t uxHighWaterMark;
 
 /*********update*/ ////////////

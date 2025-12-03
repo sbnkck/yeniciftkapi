@@ -60,7 +60,7 @@ const int kapat_pini = 23;      // 18;      //  Kapat sintalinin geldiği pindir
 const int ac_pini = 22;         // 22 fotosel veya isin perdesi gpio su
 const int asansor_ac_pini = 18; // 21; //  18 asansorden gelen aç sinyaline göre hareket ettirecek pin
 const int stop_pini = 21;       // 23;       //22;    //  Stop düğmesi için kullanılan pindir.
-const int Rx = 19;       // 23;    //  tork arttırır
+const int Rx = 19;              // 23;    //  tork arttırır
 const int encodera = 34;        //  s1 Encoder pinidir.
 const int encoderb = 35;        //  s2 Encoder pinidir.
 const int encoderc = 32;        //  s3 Encoder pinidir.
@@ -74,7 +74,7 @@ const int fault = 33;           //  2132 entegresinin aşırı akım çekip çek
 #ifdef EDL_select
 const int sense_pini = 39; //  Akım okuyan pindir.
 const int x2_jumper = 36;  // dc barada kullanılıyor
-const int Tx = 5;  //  Başlangıçta tek başına yön ayarlamak için kullanılan jumper kapı yönü ayarlaması için kullanılmaktadır.
+const int Tx = 5;          //  Başlangıçta tek başına yön ayarlamak için kullanılan jumper kapı yönü ayarlaması için kullanılmaktadır.
 
 #else
 const int sense_pini = 36; //  Akım okuyan pindir.
@@ -267,9 +267,10 @@ String GetPostJson(String _Val);
 /*başlangıç datalarınınn servera yzdrılıdığı fonk*/
 void print_log_baslangic();
 /*çift kanat seçimi yapıldığında client olarak bağlanmasına ve data göndermesini yöneten task*/
-void ble_client_task(void *arg);
+// void ble_client_task(void *arg);
 /*trasnsistör lerin durumunu yöneten task aplikasyondan seçilen görev atamasına göre farklı şekilde transistörler farklı çalışacak*/
 void tr_mission_task(void *arg);
+void kapi_haberlesme(void *arg);
 static BLERemoteCharacteristic *pRemoteCharacteristic;
 static BLEAdvertisedDevice *myDevice;
 TaskHandle_t xHandle = NULL;
@@ -346,7 +347,9 @@ void setup()
  Amper_Queue = xQueueCreate(5, sizeof(double));
  Serial.begin(115200);      //  Seri Haberleşme başlatıldı.
  EEPROM.begin(eeprom_size); //  EEPROM belirlenen boyutta başlatıldı.
- Serial1.begin(9600, SERIAL_8N1, Rx,Tx, false, 10); 
+ Serial1.begin(9600, SERIAL_8N1, Rx, Tx, true, 10);
+ delay(100);
+ Serial1.flush();
  /****************************/
  akim_mutex = xSemaphoreCreateMutex();
  xSemaphoreGive(akim_mutex);
@@ -360,12 +363,12 @@ void setup()
  pinMode(x2_jumper, INPUT); //  GPIO 39 numaralı pin
  // pinMode(tork_jumper, INPUT);       //  GPIO 15 numaralı pin
  // pinMode(yon_jumper, INPUT_PULLUP); //  GPIO 17 numaralı pin
- pinMode(kapat_pini, INPUT);        //  GPIO 18 numaralı pin
- pinMode(ac_pini, INPUT);           //  GPIO 19 numaralı pin
- pinMode(asansor_ac_pini, INPUT);   //  GPIO 21 numaralı pin
- pinMode(stop_pini, INPUT);         //  GPIO 22 numaralı pin
+ pinMode(kapat_pini, INPUT);      //  GPIO 18 numaralı pin
+ pinMode(ac_pini, INPUT);         //  GPIO 19 numaralı pin
+ pinMode(asansor_ac_pini, INPUT); //  GPIO 21 numaralı pin
+ pinMode(stop_pini, INPUT);       //  GPIO 22 numaralı pin
  // pinMode(x1_jumper, INPUT_PULLUP);  //  GPIO 23 numaralı pin
- pinMode(sense_pini, INPUT);        //  GPIO 36 numaralı pin
+ pinMode(sense_pini, INPUT); //  GPIO 36 numaralı pin
  /*  OUTPUTLARIN BELİRLENMESİ */
  pinMode(H1, OUTPUT);         //  GPIO 13 numaralı pin
  pinMode(H2, OUTPUT);         //  GPIO 5 numaralı pin
@@ -375,6 +378,7 @@ void setup()
  pinMode(L3, OUTPUT);         //  GPIO 25 numaralı pin
  pinMode(kilit_pini, OUTPUT); //  GPIO 16 numaralı pin
  eeprom_oku_fn();             //  EEPROM okunuyor.
+
  if (select_tr_mission == kapi_acik)
  {
   digitalWrite(kilit_pini, 1);
@@ -528,10 +532,11 @@ void setup()
  xTaskCreatePinnedToCore(motor_akim_oku, "motor_akim_oku", 2048 * 2, NULL, 1, &motor_akim_oku_arg, 1);
  xTaskCreatePinnedToCore(ble_task, "ble_task", 1024 * 3, NULL, 1, &ble_arg, 0);
  xTaskCreate(tr_mission_task, "tr_mission_task", 1024, NULL, 1, &tr_mission_task_arg);
+ xTaskCreate(kapi_haberlesme, "kapi_haberlesme", 1024, NULL, 1, &kapi_haberlesme_arg);
 
  test_func(); // güncelleme ve ble işlemlerinden sonra test yaptırıyoruz ki sıkıntı çıktığı taktıirde güncelleme yapabilelim
 
- xTaskCreate(seri_yazdir, "seri_yazdir", 2048 * 4, NULL, 1, &seri_yazdir_arg);
+ // xTaskCreate(seri_yazdir, "seri_yazdir", 2048 * 4, NULL, 1, &seri_yazdir_arg);
  xTaskCreate(fault_task, "fault_task", 2048 * 4, NULL, 12, &fault_task_arg);
  xTaskCreatePinnedToCore(hareket_kontrol, "hareket_kontrol", 2048 * 4, NULL, 11, &hareket_kontrol_arg, 1);
  // xTaskCreate(hareket_kontrol, "hareket_kontrol", 2048 * 4, NULL, 11, &hareket_kontrol_arg);
@@ -1314,7 +1319,7 @@ void DutyHesaplama()
   {
    gain_scale = 5;
   }
-  if ((adim_sayisi >(maksimum_kapi_boyu-50)))
+  if ((adim_sayisi > (maksimum_kapi_boyu - 50)))
   {
    gain_scale = 5;
    Kf = 0.002;
@@ -1324,7 +1329,7 @@ void DutyHesaplama()
  }
  if (hareket_sinyali == kapi_kapat_sinyali)
  {
-  if ((adim_sayisi) > (maksimum_kapi_boyu-100))
+  if ((adim_sayisi) > (maksimum_kapi_boyu - 100))
   {
    gain_scale = 5;
    duty_Kp = 0.0001;
@@ -1338,7 +1343,7 @@ void DutyHesaplama()
    Kd = 0.01;
    Kf = 0.0007;
   }
-   if (adim_sayisi < (maksimum_kapi_boyu / 2))
+  if (adim_sayisi < (maksimum_kapi_boyu / 2))
   {
    gain_scale = 5;
    duty_Kp = 0.001;
@@ -2334,7 +2339,7 @@ void kapi_kapat_hazirlik()
  kapi_acma_derecesi = kapi_acma_derecesi * 2;
  maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0)) / 2.5;
  kapama_max_rpm = EEPROM.read(16);
-  kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
+ kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
  const float base_rpm = 100.0;         // kalkış momenti için taban RPM
  const float max_rpm = kapama_max_rpm; // kapama maksimum hızı
  const float ramp_up_ratio = 0.50;     // hızlı kalkış
@@ -3493,6 +3498,11 @@ void ble_data_al()
    vTaskDelay(500 / portTICK_RATE_MS);
    esp_restart();
 
+   break;
+  case 106:
+   kapi_rutbesi = ble_alinan_deger;
+   Serial.print("BLE Al Fn: kapi_rutbesi = ");
+   Serial.println(kapi_rutbesi);
    break;
   }
   if (adres == 29)
@@ -5891,69 +5901,112 @@ bool connectToServer()
  return true;
 }
 
-void ble_client_task(void *arg)
+void kapi_haberlesme(void *arg)
 {
-
+ uint8_t write_msg[5] = {255, 255, 0, 127, 127};
+ kapi_rutbesi = SLAVE;
  while (1)
  {
-  vTaskDelay(500 / portTICK_RATE_MS);
-  if (doConnect == true)
+  if (kapi_rutbesi == MASTER)
   {
-   if (connectToServer())
+   vTaskDelay(500 / portTICK_RATE_MS);
+   Serial1.write(&write_msg[0], 5);
+   Serial.println("data gonderdi");
+   if (Serial1.available())
    {
-    Serial.println("We are now connected to the BLE Server.");
-   }
-   else
-   {
-    Serial.println("We have failed to connect to the server; there is nothin more we will do.");
-   }
-   doConnect = false;
-  }
-  if (connected)
-  {
+    int a = Serial1.available();
+    uint8_t readmessage[a] = {0};
 
-   if (pRemoteCharacteristic->canRead())
-   {
+    Serial1.read(readmessage, a);
 
-    std::string gelen = pRemoteCharacteristic->readValue();
-    for (int i = 0; i < 20; i++)
+    for (size_t i = 0; i < a; i++)
     {
-     printf("i : %d data : %d\n", i, uint8_t(gelen[i]));
-
-     server_data[i] = uint8_t(gelen[i]);
+     Serial.print(readmessage[i]);
+     Serial.print(" , ");
     }
+    Serial.println();
+    Serial1.flush();
    }
-   /*butonlara basılınca gönderilmesi gereken datalar belirlenip gönderiyoruz*/
-   if (client_data[client_ac_index] == 1 || client_data[client_kapa_index] == 1 || client_data[client_dur_index] == 1)
-   {
-    client_data[0] = 121;
-    client_data[1] = 123;
-    client_data[client_max_rpm_index] = EEPROM.read(11);
-    client_data[client_kapama_max_rpm_index] = EEPROM.read(16);
-    client_data[client_mentese_index] = mentese_yonu;
-    client_data[client_acil_stop_index] = digitalRead(stop_pini);
-    client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
-    // client_data[client_mentese_index] = mentese_yonu;
-    client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
-    client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
-    client_data[client_push_run_index] = push_run_flag;
-    client_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
-    client_data[client_derece_index] = kapi_acma_derecesi / 2; //*
-    pRemoteCharacteristic->writeValue(client_data, sizeof(client_data));
-    // for (int i = 0; i < 15; i++)
-    //{
-    // printf("i : %d data : %d\n", i, uint8_t(client_data[i]));
-    // }
-   }
-
-   client_data[client_ac_index] = 0;
-   client_data[client_kapa_index] = 0;
-   client_data[client_dur_index] = 0;
   }
-  else if (doScan)
+  else
   {
-   BLEDevice::getScan()->start(0); // this is just eample to start scan after disconnect, most likely there is better way to do it in arduino
+
+   vTaskDelay(100 / portTICK_RATE_MS);
+   Serial1.write(&write_msg[0], 5);
+   if (Serial1.available())
+   {
+    int a = Serial1.available();
+    uint8_t readmessage[a] = {0};
+
+    Serial1.read(readmessage, a);
+
+    for (size_t i = 0; i < a; i++)
+    {
+     Serial.print(readmessage[i]);
+     Serial.print(" , ");
+    }
+    Serial.println();
+    Serial1.flush();
+   }
+   
   }
+  // if (doConnect == true)
+  // {
+  //  if (connectToServer())
+  //  {
+  //   Serial.println("We are now connected to the BLE Server.");
+  //  }
+  //  else
+  //  {
+  //   Serial.println("We have failed to connect to the server; there is nothin more we will do.");
+  //  }
+  //  doConnect = false;
+  // }
+  // if (connected)
+  // {
+
+  //  if (pRemoteCharacteristic->canRead())
+  //  {
+
+  //   std::string gelen = pRemoteCharacteristic->readValue();
+  //   for (int i = 0; i < 20; i++)
+  //   {
+  //    printf("i : %d data : %d\n", i, uint8_t(gelen[i]));
+
+  //    server_data[i] = uint8_t(gelen[i]);
+  //   }
+  //  }
+  //  /*butonlara basılınca gönderilmesi gereken datalar belirlenip gönderiyoruz*/
+  //  if (client_data[client_ac_index] == 1 || client_data[client_kapa_index] == 1 || client_data[client_dur_index] == 1)
+  //  {
+  //   client_data[0] = 121;
+  //   client_data[1] = 123;
+  //   client_data[client_max_rpm_index] = EEPROM.read(11);
+  //   client_data[client_kapama_max_rpm_index] = EEPROM.read(16);
+  //   client_data[client_mentese_index] = mentese_yonu;
+  //   client_data[client_acil_stop_index] = digitalRead(stop_pini);
+  //   client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
+  //   // client_data[client_mentese_index] = mentese_yonu;
+  //   client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
+  //   client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
+  //   client_data[client_push_run_index] = push_run_flag;
+  //   client_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
+  //   client_data[client_derece_index] = kapi_acma_derecesi / 2; //*
+  //   pRemoteCharacteristic->writeValue(client_data, sizeof(client_data));
+  //   // for (int i = 0; i < 15; i++)
+  //   //{
+  //   // printf("i : %d data : %d\n", i, uint8_t(client_data[i]));
+  //   // }
+  //  }
+
+  //  client_data[client_ac_index] = 0;
+  //  client_data[client_kapa_index] = 0;
+  //  client_data[client_dur_index] = 0;
+  // }
+  // else if (doScan)
+  // {
+  //  BLEDevice::getScan()->start(0); // this is just eample to start scan after disconnect, most likely there is better way to do it in arduino
+  // }
  }
 }
 
