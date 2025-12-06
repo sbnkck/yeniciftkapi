@@ -2,20 +2,24 @@
 #ifndef defines_h
 #define defines_h
 #include <string>
-#define EDL_select true//6edl sistemine geçildiğinde aktif edilmeli
-#define AKIM_V2 ture//LMV 321 li devremiz kullanılmaya başladığında aktif edilmeli
-bool motor_ilk_tahrik_flag=false;
+#define EDL_select true // 6edl sistemine geçildiğinde aktif edilmeli
+#define AKIM_V2 ture    // LMV 321 li devremiz kullanılmaya başladığında aktif edilmeli
+bool motor_ilk_tahrik_flag = false;
 #define MASTER 1
 #define SLAVE 0
-uint8_t kapi_rutbesi=SLAVE;
+#define SERIAL_SIZE 20
+uint8_t client_data[SERIAL_SIZE + 4]; // client modunda gonderieln data bufferi
+uint8_t server_data[SERIAL_SIZE + 4]; // servermodunda gonderieln data bufferi
+uint8_t kapi_rutbesi = MASTER;
+bool new_data = false;
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
 double duty_Kp = 0.0001;
 double sure_Kp = 0.5;
 double Kd = 0.01;
 double sure_global = 0;
-double sure_integral=0;
-   double sure;
-   int rpmTespit=0;
+double sure_integral = 0;
+double sure;
+int rpmTespit = 0;
 #define ac_button_ofset 0
 #define kapi_ac 0
 #define kapi_kapa 1
@@ -78,8 +82,6 @@ bool acil_stop_flag = false;       // acil stop kesmesi oluştuğunu söyeyen fl
 bool acil_stop_int_flag = false;   // acil stopa basıildimi kontrolunu taskta yaptırmak için kullandık
 bool acil_stop_int_flag_kapat = false;
 uint16_t acil_stop_sayici = 0;
-uint8_t client_data[20]; // client modunda gonderieln data bufferi
-uint8_t server_data[20]; // servermodunda gonderieln data bufferi
 bool ble_data_geldi = false;
 bool acil_stop_client = true; // planalandi ama kullanilmadi
 bool baski_led_flag = false;  // kapi baski aldığında ledi uzun süre yanık tutmak için
@@ -97,7 +99,7 @@ float bobin_taban_akim = 0.0005;
 
 float bobin_ust_akim = 2.250;
 float bobin_orta_akim = bobin_ust_akim;
-float akim_siniri = 1;//erken tepki versin diye 1 yaptık 2 ye gelen kadar anca sınırlayabiliyor.
+float akim_siniri = 1; // erken tepki versin diye 1 yaptık 2 ye gelen kadar anca sınırlayabiliyor.
 double akim_siniri_d_h = 2;
 bool kapattan_aca = false; // kapatta giderken ac verilince ac task teki motor ilk tahrik devreye girmesin diye yazılan flag
 bool actan_kapata = false; // ac esnasında kapat gelirse açılacak flag

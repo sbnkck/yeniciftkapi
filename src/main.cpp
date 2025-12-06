@@ -532,7 +532,7 @@ void setup()
  xTaskCreatePinnedToCore(motor_akim_oku, "motor_akim_oku", 2048 * 2, NULL, 1, &motor_akim_oku_arg, 1);
  xTaskCreatePinnedToCore(ble_task, "ble_task", 1024 * 3, NULL, 1, &ble_arg, 0);
  xTaskCreate(tr_mission_task, "tr_mission_task", 1024, NULL, 1, &tr_mission_task_arg);
- xTaskCreate(kapi_haberlesme, "kapi_haberlesme", 1024, NULL, 1, &kapi_haberlesme_arg);
+ xTaskCreate(kapi_haberlesme, "kapi_haberlesme", 1024 * 2, NULL, 1, &kapi_haberlesme_arg);
 
  test_func(); // güncelleme ve ble işlemlerinden sonra test yaptırıyoruz ki sıkıntı çıktığı taktıirde güncelleme yapabilelim
 
@@ -1038,11 +1038,8 @@ static void hareket_kontrol(void *arg)
     }
     if (mod_flag == cift_kanat && (adim_sayisi < 30)) // kapanaırken kilit noktasndan sonrasına geldiğini servere saöyluyor
     {
-     server_data[0] = 121;
-     server_data[1] = 123;
      server_data[client_kilit_index] = 1;
-
-     pCharacteristic_2->setValue(server_data, sizeof(server_data));
+     new_data = true;
     }
    }
   }
@@ -1560,11 +1557,8 @@ void kapi_ac_fonksiyonu()
   faulttan_kapata = false; // faulttan sonra ac sinyali kesilince bu if e girdi.bayrağı sıfırlıyoruz
   if (mod_flag == cift_kanat)
   {
-   server_data[0] = 121;
-   server_data[1] = 123;
    server_data[client_kilit_index] = 0;
-
-   pCharacteristic_2->setValue(server_data, sizeof(server_data));
+   new_data = true;
   }
   fault_siniri = 0;             // fault ledi kesmesi sistemi durdurma sayacı sıfırlandı
   kapattan_aca = false;         // ac tamamlanınca kapattan aca flag sıfırlanıyor
@@ -1668,11 +1662,8 @@ void kapi_kapa_fonksiyonu()
  }
  if (mod_flag == cift_kanat && (adim_sayisi < 200)) // klit bölgesine geldiysen geldiğini söyle
  {
-  server_data[0] = 121;
-  server_data[1] = 123;
   server_data[client_kilit_index] = 1;
-
-  pCharacteristic_2->setValue(server_data, sizeof(server_data));
+  new_data = true;
  }
 
  if (kapat_time_out_flag)
@@ -4127,7 +4118,7 @@ void eeprom_oku_fn()
  //  printf("yon jumper ile mentese yonu ayarlandi_: %d \n", mentese_yonu);
  // }
 
- mod = tek_kanat;
+ mod = kapi_rutbesi;
  if (mod > 200)
  {
   mod = tek_kanat; //  Varsayılan Değer  tek kanat
@@ -5900,55 +5891,130 @@ bool connectToServer()
  connected = true;
  return true;
 }
+void serial1_read()
+{
+ if (Serial1.available())
+ {
+  int a = Serial1.available();
+  printf("okunan byte sayisi : %d \n", a);
+  uint8_t readmessage[a] = {0};
 
+  Serial1.read(readmessage, a);
+
+  for (size_t i = 0; i < a; i++)
+  {
+   Serial.print(readmessage[i]);
+   Serial.print(" , ");
+  }
+  Serial.println();
+  const uint8_t start_byte[2] = {255, 255};
+  const uint8_t stop_byte[2] = {127, 127};
+  int hatakodu = 0;
+  if (a < (SERIAL_SIZE + 4))
+  {
+   printf("serial read 1 size hatasi\n");
+   return;
+  }
+  for (int i = a; i >= 0; i--)
+  {
+   if (memcmp(&readmessage[i - (SERIAL_SIZE + 4)], start_byte, 2) == 0 && memcmp(&readmessage[i - 2], stop_byte, 2) == 0) // start byte ve stop byte lariparazitten korunmak için yaptık eğer doğru veri gerliyrsa işlemlere devam edecek
+   {
+    Serial.println("son gecerli deger bulundu...");
+    for (size_t j = (i - (SERIAL_SIZE + 2)); j < (i - 2); j++)
+    {
+     Serial.print(readmessage[j]);
+     Serial.print(" , ");
+    }
+    Serial.println();
+    if (kapi_rutbesi == MASTER)
+    { /*master kendi datası olan server datasını okuyor*/
+     memcpy(server_data, &readmessage[i - (SERIAL_SIZE + 4)], sizeof(server_data));
+     for (size_t i = 0; i < sizeof(server_data); i++)
+     {
+      printf("server_data[%d] : %d\n", i, server_data[i]);
+     }
+    }
+    else
+    { /*slave kendi datası olan client datasını okuyor*/
+     memcpy(client_data, &readmessage[i - (SERIAL_SIZE + 4)], sizeof(client_data));
+     calisma_yontemi = ac_kapat;
+     mod_flag = cift_kanat;
+     for (size_t i = 0; i < sizeof(client_data); i++)
+     {
+      printf("client_data[%d] : %d\n", i, client_data[i]);
+     }
+     if (client_data[client_ac_index] == 1 && client_data[client_dur_index] == 0)
+     {
+      ac_flag = true;
+      bluetooth_kapi_ac = true;
+     }
+     if (client_data[client_kapa_index] == 1)
+     {
+      bluetooth_kapi_kapa = true;
+      kapat_flag = true;
+     }
+     if (client_data[client_dur_index] == 1)
+     {
+      hareket_sinyali = kapi_bosta_sinyali;
+      // if (adim_sayisi < hizlanma_boy_baslangici)
+      // {
+      //  baski_flag = true;
+      // }
+
+      motor_surme(200);
+     }
+    }
+    break;
+   }
+   else
+   {
+    // Serial.println("gecerli deger bulunmadı!!!!!...");
+   }
+  }
+  Serial1.flush();
+ }
+}
 void kapi_haberlesme(void *arg)
 {
- uint8_t write_msg[5] = {255, 255, 0, 127, 127};
- kapi_rutbesi = SLAVE;
+ memset(server_data,0,sizeof(server_data));
+ memset(client_data,0,sizeof(client_data));
+ server_data[0] = 255;
+ server_data[1] = 255;
+ server_data[SERIAL_SIZE + 2] = 127;
+ server_data[SERIAL_SIZE + 3] = 127;
+ client_data[0] = 255;
+ client_data[1] = 255;
+ client_data[SERIAL_SIZE + 2] = 127;
+ client_data[SERIAL_SIZE + 3] = 127;
+
  while (1)
  {
   if (kapi_rutbesi == MASTER)
   {
-   vTaskDelay(500 / portTICK_RATE_MS);
-   Serial1.write(&write_msg[0], 5);
-   Serial.println("data gonderdi");
-   if (Serial1.available())
-   {
-    int a = Serial1.available();
-    uint8_t readmessage[a] = {0};
-
-    Serial1.read(readmessage, a);
-
-    for (size_t i = 0; i < a; i++)
-    {
-     Serial.print(readmessage[i]);
-     Serial.print(" , ");
-    }
-    Serial.println();
-    Serial1.flush();
-   }
+   /*slave e  gidecek data master tarafından gönderilecek*/
+   vTaskDelay(100 / portTICK_RATE_MS);
+   client_data[client_max_rpm_index] = EEPROM.read(11);
+   client_data[client_kapama_max_rpm_index] = EEPROM.read(16);
+   client_data[client_mentese_index] = mentese_yonu;
+   client_data[client_acil_stop_index] = digitalRead(stop_pini);
+   client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
+   client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
+   client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
+   client_data[client_push_run_index] = push_run_flag;
+   client_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
+   client_data[client_derece_index] = kapi_acma_derecesi / 2; //*
+   Serial1.write(&client_data[0], sizeof(server_data));
+   client_data[client_ac_index] = 0;
+   client_data[client_kapa_index] = 0;
+   client_data[client_dur_index] = 0;
+   serial1_read();
   }
   else
   {
-
+   /*mastera gidecek data slave tarafından gönderilecek*/
    vTaskDelay(100 / portTICK_RATE_MS);
-   Serial1.write(&write_msg[0], 5);
-   if (Serial1.available())
-   {
-    int a = Serial1.available();
-    uint8_t readmessage[a] = {0};
-
-    Serial1.read(readmessage, a);
-
-    for (size_t i = 0; i < a; i++)
-    {
-     Serial.print(readmessage[i]);
-     Serial.print(" , ");
-    }
-    Serial.println();
-    Serial1.flush();
-   }
-   
+   Serial1.write(&server_data[0], sizeof(client_data));
+   serial1_read();
   }
   // if (doConnect == true)
   // {
