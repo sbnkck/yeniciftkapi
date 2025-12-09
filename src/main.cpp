@@ -186,8 +186,8 @@ void frame_parser_push(uint8_t *buf, int len);
 void handle_ack_frame(uint8_t *payload, int len);
 void send_ack_with_status(void);
 void master_send_task(void *arg);
+void client_send_task(void *arg);
 void handle_data_frame(uint8_t *payload, int len);
-void handle_ack_frame(uint8_t *payload, int len);
 void DutyHesaplama();
 void MotorBekletme();
 bool connectToServer();                  ////ble telefona bağlanma işleminde devreye girer ve duruma göre true döndürür.
@@ -401,6 +401,13 @@ void setup()
  xTaskCreate(
      master_send_task,
      "master_send_task",
+     4096,
+     NULL,
+     8, // RX'ten bir tık düşük öncelik
+     NULL);
+ xTaskCreate(
+     client_send_task,
+     "client_send_task",
      4096,
      NULL,
      8, // RX'ten bir tık düşük öncelik
@@ -6389,107 +6396,126 @@ void frame_parser_push(uint8_t *buf, int len)
 }
 void handle_ack_frame(uint8_t *payload, int len)
 {
- printf("ACK PAYLOAD LEN = %d\n", len);
- printf("ACK DATA: kilit=%d hareket=%d fault=%d acil=%d adim=%d\n",
-        payload[0], payload[1], payload[2], payload[3],
-        (int)(payload[4] | payload[5] << 8));
+    remote_kilit   = payload[0];
+    remote_hareket = payload[1];
+    remote_fault   = payload[2];
+    remote_acil    = payload[3];
+    remote_adim    = (uint16_t)payload[4] | ((uint16_t)payload[5] << 8);
 
- remote_kilit = payload[0];
- remote_hareket = payload[1];
- remote_fault = payload[2];
- remote_acil = payload[3];
- remote_adim = (uint16_t)payload[4] | ((uint16_t)payload[5] << 8);
+    uart_ack_geldi = true;
 
- uart_ack_geldi = true;
+    printf("SERVER RX ACK: kilit=%d hareket=%d fault=%d acil=%d adim=%d\n",
+           remote_kilit, remote_hareket, remote_fault,
+           remote_acil, remote_adim);
 }
+
 
 void handle_data_frame(uint8_t *payload, int len)
 {
- if (kapi_rutbesi)
- {
-  // MASTER: karşıdan gelen statüyü alıyorsun (opsiyonel)
-  // payload --> server_data veya başka struct
-  memcpy(server_data, payload, min(len, (int)sizeof(server_data)));
- }
- else
- {
-  // SLAVE: master'dan komut geldi (client_data mantığı)
-  memcpy(client_data, payload, min(len, (int)sizeof(client_data)));
+    if (kapi_rutbesi == MASTER)  // SERVER
+    {
+        // CLIENT → SERVER yönlü data = server_data
+        memcpy(server_data, payload, min(len, (int)sizeof(server_data)));
 
-  // Burada client_data içindeki aç/kapa/dur komutlarını işler,
-  // sonra ACK + kendi durumunu gönderirsin:
-  send_ack_with_status();
- }
+        printf("SERVER RX server_data: ");
+        for (int i = 0; i < len; i++) printf("%02X ", payload[i]);
+        printf("\n");
+    }
+    else  // CLIENT
+    {
+        // SERVER → CLIENT yönlü data = client_data
+        memcpy(client_data, payload, min(len, (int)sizeof(client_data)));
+
+        printf("CLIENT RX client_data: ");
+        for (int i = 0; i < len; i++) printf("%02X ", payload[i]);
+        printf("\n");
+
+        // CLIENT her DATA’dan sonra ACK yollar
+        send_ack_with_status();
+    }
 }
+
 void send_ack_with_status(void)
 {
- uint8_t ack[4 + 6]; // header(3) + len(1) + payload(6)
+    uint8_t ack[10];
 
- ack[0] = 0xAA;
- ack[1] = 0x55;
- ack[2] = 0x01; // ACK kodu
- ack[3] = 6;    // payload length
+    ack[0] = 0xAA;
+    ack[1] = 0x55;
+    ack[2] = 0x01;  // ACK kodu
+    ack[3] = 6;     // payload length
 
- ack[4] = server_data[client_kilit_index]; // bu kapının kilit bilgisi
- ack[5] = (uint8_t)hareket_sinyali;
- ack[6] = (uint8_t)fault_kesme_flag_int;
- ack[7] = (uint8_t)acil_stop_flag;
- ack[8] = (uint8_t)(adim_sayisi & 0xFF);
- ack[9] = (uint8_t)(adim_sayisi >> 8);
- hexDump("TX ACK", ack, sizeof(ack));
- uart_write_bytes(UART_PORT, (const char *)ack, sizeof(ack));
+    // CLIENT’in durumu (server_data değil!)
+    ack[4] = server_data[client_kilit_index];
+    ack[5] = hareket_sinyali;
+    ack[6] = fault_kesme_flag_int;
+    ack[7] = acil_stop_flag;
+    ack[8] = (uint8_t)(adim_sayisi & 0xFF);
+    ack[9] = (uint8_t)(adim_sayisi >> 8);
+
+    hexDump("CLIENT TX ACK", ack, sizeof(ack));
+
+    uart_write_bytes(UART_PORT, (const char*)ack, sizeof(ack));
 }
+
 void master_send_task(void *arg)
 {
- uint8_t tx[3 + 20]; // header(2) + len(1) + payload(20)
+    uint8_t tx[3 + SERIAL_SIZE];
 
- while (1)
- {
-  // Örnek: her 50 ms’de bir paket gönder
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
+    while (1)
+    {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-  if (!kapi_rutbesi)
-   continue;
+        if (kapi_rutbesi != MASTER) continue;  // sadece SERVER gönderir
 
-  // client_data içini burada dolduruyorsun (zaten projende var)
+         tx[0] = 0xFF;
+         tx[1] = 0xFF;
+         tx[2] = SERIAL_SIZE;
+         //client_data[client_max_rpm_index] = EEPROM.read(11);
+         client_data[client_kapama_max_rpm_index] = EEPROM.read(16);
+         client_data[client_mentese_index] = mentese_yonu;
+         client_data[client_acil_stop_index] = digitalRead(stop_pini);
+         client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
+         client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
+         client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
+         client_data[client_push_run_index] = push_run_flag;
+         client_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
+         client_data[client_derece_index] = kapi_acma_derecesi / 2; //*
 
-  tx[0] = 0xFF;
-  tx[1] = 0xFF;
-  tx[2] = 20; // payload uzunluğu (örnek)
-  client_data[client_max_rpm_index] = EEPROM.read(11);
-  client_data[client_kapama_max_rpm_index] = EEPROM.read(16);
-  client_data[client_mentese_index] = mentese_yonu;
-  client_data[client_acil_stop_index] = digitalRead(stop_pini);
-  client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
-  client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
-  client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
-  client_data[client_push_run_index] = push_run_flag;
-  client_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
-  client_data[client_derece_index] = kapi_acma_derecesi / 2; //*
-  memcpy(&tx[2], client_data, 20);
+         memcpy(&tx[3], client_data, SERIAL_SIZE);
 
-  uart_ack_geldi = false;
-  hexDump("TX DATA", tx, sizeof(tx));
-  uart_write_bytes(UART_PORT, (const char *)tx, 3 + 20);
+        uart_ack_geldi = false;
 
-  // ---- ACK BEKLE ----
-  unsigned long t0 = millis();
-  while (!uart_ack_geldi && (millis() - t0 < 50))
-  {
-   vTaskDelay(5 / portTICK_PERIOD_MS);
-  }
-  client_data[client_ac_index] = 0;
-  client_data[client_kapa_index] = 0;
-  client_data[client_dur_index] = 0;
-  if (!uart_ack_geldi)
-  {
-   // TODO: retry sayacı, hata log gibi şeyler ekleyebilirsin
-   Serial.println("ACK gelmedi, tekrar denenebilir");
-  }
-  else
-  {
-   Serial.println("ACK geldi");
-   // remote_* değişkenlerinde karşı kanadın son durumu var
-  }
- }
+        hexDump("SERVER TX client_data", tx, 3 + SERIAL_SIZE);
+        uart_write_bytes(UART_NUM_1, (const char*)tx, 3 + SERIAL_SIZE);
+
+        unsigned long t0 = millis();
+        while (!uart_ack_geldi && (millis() - t0 < 40))
+            vTaskDelay(2);
+
+        if (!uart_ack_geldi)
+            printf("SERVER ACK TIMEOUT!\n");
+    }
 }
+void client_send_task(void *arg)
+{
+    uint8_t tx[3 + SERIAL_SIZE];
+
+    while (1)
+    {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+        if (kapi_rutbesi == MASTER) continue; // sadece CLIENT çalışacak
+
+        tx[0] = 0xFF;
+        tx[1] = 0xFF;
+        tx[2] = SERIAL_SIZE;
+        server_data[3]++;
+        memcpy(&tx[3], server_data, SERIAL_SIZE);
+
+        hexDump("CLIENT TX server_data", tx, 3 + SERIAL_SIZE);
+      uart_write_bytes(UART_PORT, (const char*)tx, 3 + SERIAL_SIZE);
+
+    }
+}
+
+

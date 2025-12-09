@@ -7,10 +7,10 @@
 bool motor_ilk_tahrik_flag = false;
 #define MASTER 1
 #define SLAVE 0
-#define SERIAL_SIZE 20
-uint8_t client_data[SERIAL_SIZE + 4]; // client modunda gonderieln data bufferi
-uint8_t server_data[SERIAL_SIZE + 4]; // servermodunda gonderieln data bufferi
 uint8_t kapi_rutbesi = MASTER;
+#define SERIAL_SIZE 200
+uint8_t client_data[SERIAL_SIZE] = {0};
+uint8_t server_data[SERIAL_SIZE] = {0};
 bool new_data = false;
 volatile bool uart_ack_geldi = false;
 
