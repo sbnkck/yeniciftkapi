@@ -12,6 +12,17 @@ uint8_t client_data[SERIAL_SIZE + 4]; // client modunda gonderieln data bufferi
 uint8_t server_data[SERIAL_SIZE + 4]; // servermodunda gonderieln data bufferi
 uint8_t kapi_rutbesi = MASTER;
 bool new_data = false;
+volatile bool uart_ack_geldi = false;
+
+// Karşı kapının (ACK içinden gelen) durumu:
+uint8_t  remote_kilit   = 0;
+uint8_t  remote_hareket = 0;
+uint8_t  remote_fault   = 0;
+uint8_t  remote_acil    = 0;
+uint16_t remote_adim    = 0;
+
+
+
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
 double duty_Kp = 0.0001;
 double sure_Kp = 0.5;
