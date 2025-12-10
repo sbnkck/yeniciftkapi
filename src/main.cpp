@@ -405,13 +405,13 @@ void setup()
      NULL,
      8, // RX'ten bir tık düşük öncelik
      NULL);
- xTaskCreate(
-     client_send_task,
-     "client_send_task",
-     4096,
-     NULL,
-     8, // RX'ten bir tık düşük öncelik
-     NULL);
+ // xTaskCreate(
+ //     client_send_task,
+ //     "client_send_task",
+ //     4096,
+ //     NULL,
+ //     8, // RX'ten bir tık düşük öncelik
+ //     NULL);
  /****************************/
  akim_mutex = xSemaphoreCreateMutex();
  xSemaphoreGive(akim_mutex);
@@ -6282,12 +6282,12 @@ void tr_mission_task(void *arg)
 }
 void hexDump(const char *msg, const uint8_t *data, int len)
 {
- printf("%s (%d bytes): ", msg, len);
- for (int i = 0; i < len; i++)
- {
-  printf("%d ", data[i]);
- }
- printf("\n");
+ // printf("%s (%d bytes): ", msg, len);
+ // for (int i = 0; i < len; i++)
+ // {
+ //  printf("%d ", data[i]);
+ // }
+ // printf("\n");
 }
 void uart_rx_task(void *arg)
 {
@@ -6299,7 +6299,7 @@ void uart_rx_task(void *arg)
       UART_PORT,
       buf,
       sizeof(buf),
-      10 / portTICK_PERIOD_MS); // 10 ms timeout
+      1 / portTICK_PERIOD_MS); // 10 ms timeout
 
   if (len > 0)
   {
@@ -6327,13 +6327,13 @@ void frame_parser_push(uint8_t *buf, int len)
    {
     state = 1;
     is_ack = false;
-    printf("PARSER: DATA header detected\n");
+    // printf("PARSER: DATA header detected\n");
    }
    else if (b == 0xAA)
    {
     state = 10;
     is_ack = true;
-    printf("PARSER: ACK header detected\n");
+    // printf("PARSER: ACK header detected\n");
    }
    break;
 
@@ -6396,126 +6396,159 @@ void frame_parser_push(uint8_t *buf, int len)
 }
 void handle_ack_frame(uint8_t *payload, int len)
 {
-    remote_kilit   = payload[0];
-    remote_hareket = payload[1];
-    remote_fault   = payload[2];
-    remote_acil    = payload[3];
-    remote_adim    = (uint16_t)payload[4] | ((uint16_t)payload[5] << 8);
-
-    uart_ack_geldi = true;
-
-    printf("SERVER RX ACK: kilit=%d hareket=%d fault=%d acil=%d adim=%d\n",
-           remote_kilit, remote_hareket, remote_fault,
-           remote_acil, remote_adim);
+ uart_ack_geldi = true;
+   memcpy(server_data, payload, min(len, (int)sizeof(server_data)));
+  // printf("server_data");
+  // for (size_t i = 0; i < sizeof(server_data); i++)
+  // {
+  //  printf("[%d] : %03d", i, server_data[i]);
+  // }
+  // printf("\n");
 }
-
 
 void handle_data_frame(uint8_t *payload, int len)
 {
-    if (kapi_rutbesi == MASTER)  // SERVER
-    {
-        // CLIENT → SERVER yönlü data = server_data
-        memcpy(server_data, payload, min(len, (int)sizeof(server_data)));
+ if (kapi_rutbesi == MASTER) // SERVER
+ {
+  // CLIENT → SERVER yönlü data = server_data
+  // memcpy(server_data, payload, min(len, (int)sizeof(server_data)));
+  // send_ack_with_status();
+  // printf("server_data");
+  // for (size_t i = 0; i < sizeof(server_data); i++)
+  // {
+  //  printf("[%d] : %03d", i, server_data[i]);
+  // }
+  // printf("\n");
+ }
+ else // CLIENT
+ {
+  // SERVER → CLIENT yönlü data = client_data
+  memcpy(client_data, payload, min(len, (int)sizeof(client_data)));
+  send_ack_with_status();
+  calisma_yontemi = ac_kapat;
+  mod_flag = cift_kanat;
+  // printf("client_data");
+  // for (size_t i = 0; i < sizeof(client_data); i++)
+  // {
+  //  printf("[%d] : %03d", i, client_data[i]);
+  // }
+  // printf("\n");
+  if (client_data[client_ac_index] == 1 && client_data[client_dur_index] == 0)
+  {
+   ac_flag = true;
+   bluetooth_kapi_ac = true;
+  }
+  if (client_data[client_kapa_index] == 1)
+  {
+   bluetooth_kapi_kapa = true;
+   kapat_flag = true;
+  }
+  if (client_data[client_dur_index] == 1)
+  {
+   hareket_sinyali = kapi_bosta_sinyali;
+   // if (adim_sayisi < hizlanma_boy_baslangici)
+   // {
+   //  baski_flag = true;
+   // }
 
-        printf("SERVER RX server_data: ");
-        for (int i = 0; i < len; i++) printf("%02X ", payload[i]);
-        printf("\n");
-    }
-    else  // CLIENT
-    {
-        // SERVER → CLIENT yönlü data = client_data
-        memcpy(client_data, payload, min(len, (int)sizeof(client_data)));
-
-        printf("CLIENT RX client_data: ");
-        for (int i = 0; i < len; i++) printf("%02X ", payload[i]);
-        printf("\n");
-
-        // CLIENT her DATA’dan sonra ACK yollar
-        send_ack_with_status();
-    }
+   motor_surme(200);
+  }
+ }
 }
 
 void send_ack_with_status(void)
 {
-    uint8_t ack[10];
+ uint8_t ack[4+SERIAL_SIZE];
+ memcpy(&ack[4], server_data, SERIAL_SIZE);
+ ack[0] = 0xAA;
+ ack[1] = 0x55;
+ ack[2] = 0x01; // ACK kodu
+ ack[3] = SERIAL_SIZE;    // payload length
 
-    ack[0] = 0xAA;
-    ack[1] = 0x55;
-    ack[2] = 0x01;  // ACK kodu
-    ack[3] = 6;     // payload length
+ // CLIENT’in durumu (server_data değil!)
+ // ack[4] = server_data[client_kilit_index];
+ // ack[5] = hareket_sinyali;
+ // ack[6] = fault_kesme_flag_int;
+ // ack[7] = acil_stop_flag;
+ // ack[8] = (uint8_t)(adim_sayisi & 0xFF);
+ // ack[9] = (uint8_t)(adim_sayisi >> 8);
 
-    // CLIENT’in durumu (server_data değil!)
-    ack[4] = server_data[client_kilit_index];
-    ack[5] = hareket_sinyali;
-    ack[6] = fault_kesme_flag_int;
-    ack[7] = acil_stop_flag;
-    ack[8] = (uint8_t)(adim_sayisi & 0xFF);
-    ack[9] = (uint8_t)(adim_sayisi >> 8);
+ hexDump("CLIENT TX ACK", ack, sizeof(ack));
 
-    hexDump("CLIENT TX ACK", ack, sizeof(ack));
-
-    uart_write_bytes(UART_PORT, (const char*)ack, sizeof(ack));
+ uart_write_bytes(UART_PORT, (const char *)ack, sizeof(ack));
 }
 
 void master_send_task(void *arg)
 {
-    uint8_t tx[3 + SERIAL_SIZE];
+ uint8_t tx[3 + SERIAL_SIZE];
 
-    while (1)
-    {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+ while (1)
+ {
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+  if (kapi_rutbesi != MASTER)
+   continue; // sadece SERVER gönderir
 
-        if (kapi_rutbesi != MASTER) continue;  // sadece SERVER gönderir
+  tx[0] = 0xFF;
+  tx[1] = 0xFF;
+  tx[2] = SERIAL_SIZE;
+  // client_data[client_max_rpm_index] = EEPROM.read(11);
+  client_data[client_kapama_max_rpm_index] = EEPROM.read(16);
+  client_data[client_mentese_index] = mentese_yonu;
+  client_data[client_acil_stop_index] = digitalRead(stop_pini);
+  client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
+  client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
+  client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
+  client_data[client_push_run_index] = push_run_flag;
+  client_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
+  client_data[client_derece_index] = kapi_acma_derecesi / 2; //*
 
-         tx[0] = 0xFF;
-         tx[1] = 0xFF;
-         tx[2] = SERIAL_SIZE;
-         //client_data[client_max_rpm_index] = EEPROM.read(11);
-         client_data[client_kapama_max_rpm_index] = EEPROM.read(16);
-         client_data[client_mentese_index] = mentese_yonu;
-         client_data[client_acil_stop_index] = digitalRead(stop_pini);
-         client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
-         client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
-         client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
-         client_data[client_push_run_index] = push_run_flag;
-         client_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
-         client_data[client_derece_index] = kapi_acma_derecesi / 2; //*
+  memcpy(&tx[3], client_data, SERIAL_SIZE);
 
-         memcpy(&tx[3], client_data, SERIAL_SIZE);
+  uart_ack_geldi = false;
 
-        uart_ack_geldi = false;
+  hexDump("SERVER TX client_data", tx, 3 + SERIAL_SIZE);
+  uart_write_bytes(UART_NUM_1, (const char *)tx, 3 + SERIAL_SIZE);
 
-        hexDump("SERVER TX client_data", tx, 3 + SERIAL_SIZE);
-        uart_write_bytes(UART_NUM_1, (const char*)tx, 3 + SERIAL_SIZE);
+  unsigned long t0 = millis();
+  while (!uart_ack_geldi && (millis() - t0 < 40))
+   vTaskDelay(1 / portTICK_RATE_MS);
 
-        unsigned long t0 = millis();
-        while (!uart_ack_geldi && (millis() - t0 < 40))
-            vTaskDelay(2);
-
-        if (!uart_ack_geldi)
-            printf("SERVER ACK TIMEOUT!\n");
-    }
+  if (!uart_ack_geldi)
+  {
+   printf("SERVER ACK TIMEOUT!\n");
+  }
+  else
+  {
+   client_data[client_ac_index] = 0;
+   client_data[client_kapa_index] = 0;
+   client_data[client_dur_index] = 0;
+  }
+ }
 }
 void client_send_task(void *arg)
 {
-    uint8_t tx[3 + SERIAL_SIZE];
+ uint8_t tx[3 + SERIAL_SIZE];
 
-    while (1)
-    {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+ while (1)
+ {
+  vTaskDelay(100 / portTICK_PERIOD_MS);
 
-        if (kapi_rutbesi == MASTER) continue; // sadece CLIENT çalışacak
+  if (kapi_rutbesi == MASTER)
+   continue; // sadece CLIENT çalışacak
 
-        tx[0] = 0xFF;
-        tx[1] = 0xFF;
-        tx[2] = SERIAL_SIZE;
-        server_data[3]++;
-        memcpy(&tx[3], server_data, SERIAL_SIZE);
+  tx[0] = 0xFF;
+  tx[1] = 0xFF;
+  tx[2] = SERIAL_SIZE;
+  server_data[3]++;
+  memcpy(&tx[3], server_data, SERIAL_SIZE);
 
-        hexDump("CLIENT TX server_data", tx, 3 + SERIAL_SIZE);
-      uart_write_bytes(UART_PORT, (const char*)tx, 3 + SERIAL_SIZE);
+  hexDump("CLIENT TX server_data", tx, 3 + SERIAL_SIZE);
+  uart_write_bytes(UART_PORT, (const char *)tx, 3 + SERIAL_SIZE);
+  unsigned long t0 = millis();
+  while (!uart_ack_geldi && (millis() - t0 < 40))
+   vTaskDelay(1 / portTICK_RATE_MS);
 
-    }
+  if (!uart_ack_geldi)
+   printf("CLIENT ACK TIMEOUT!\n");
+ }
 }
-
-

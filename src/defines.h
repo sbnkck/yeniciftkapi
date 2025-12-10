@@ -8,7 +8,7 @@ bool motor_ilk_tahrik_flag = false;
 #define MASTER 1
 #define SLAVE 0
 uint8_t kapi_rutbesi = MASTER;
-#define SERIAL_SIZE 200
+#define SERIAL_SIZE 50
 uint8_t client_data[SERIAL_SIZE] = {0};
 uint8_t server_data[SERIAL_SIZE] = {0};
 bool new_data = false;
@@ -66,7 +66,7 @@ uint16_t baski_duty = 0;
 #define kapi_kapat_sinyali 1
 #define kapi_bosta_sinyali 2
 /*serverden gelen dataların dizi indexi*/
-#define client_max_rpm_index 2
+#define client_max_rpm_index 16
 #define client_kapama_max_rpm_index 3
 #define client_mentese_index 4
 #define client_acil_stop_index 5
