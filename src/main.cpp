@@ -1637,9 +1637,21 @@ void kapi_ac_fonksiyonu()
    }
    else
    {
-    while (rx_data[client_kapa_index] == 0)
+    while (adim_sayisi >= (maksimum_kapi_boyu - 10) && (rx_data[client_kapa_index] == 0))
     {
-     vTaskDelay(10 / portTICK_RATE_MS);
+     zaman_timeout++;
+     if (zaman_timeout <= (acik_kalma_suresi + 5))
+     {
+      vTaskDelay(10 / portTICK_RATE_MS);
+      if (digitalRead(ac_pini) == 1 || digitalRead(asansor_ac_pini) == 1)
+      {
+       zaman_timeout = 0;
+      }
+     }
+     else
+     {
+      break;
+     }
     }
    }
    if (kapi_rutbesi == MASTER)
@@ -1891,7 +1903,6 @@ void kapi_kapa_fonksiyonu()
         tx_data[client_dur_index] = 1;
         Serial.println("Slave dur komutu gonderildi.");
        }
-       Serial.println("Slave e dur mesajı set edildi.");
       }
      }
 
@@ -2676,13 +2687,13 @@ static void ac_task(void *arg)
     tanima_hizi_flag = false;
     kapanma_error_flag = false; // kapanma hatası sıfırlanıyor
     duty = tanima_hizi;
-    vTaskDelay(200 / portTICK_RATE_MS);
-    hareket_sinyali = kapi_kapat_sinyali;
     if (kapi_rutbesi == MASTER)
     {
      tx_data[client_kapa_index] = 1;
      Serial.println("Slave kapa komutu gonderildi.");
     }
+    // vTaskDelay(200 / portTICK_RATE_MS);
+    hareket_sinyali = kapi_kapat_sinyali;
    }
    kapat_flag = false;
   }
@@ -6114,6 +6125,8 @@ void handle_ack_frame(uint8_t *payload, int len)
 {
  uart_ack_geldi = true;
  memcpy(rx_data, payload, min(len, (int)sizeof(rx_data)));
+ ref_adim_sayisi = (rx_data[client_adim_sayisi_MSB_index] << 8)
+                  | (rx_data[client_adim_sayisi_LSB_index]);
  // printf("server_data");
  // for (size_t i = 0; i < sizeof(server_data); i++)
  // {
@@ -6135,6 +6148,7 @@ void handle_data_frame(uint8_t *payload, int len)
   //  printf("[%d] : %03d", i, server_data[i]);
   // }
   // printf("\n");
+
  }
  else // CLIENT
  {
@@ -6168,12 +6182,17 @@ void handle_data_frame(uint8_t *payload, int len)
   push_run_flag = bool(rx_data[client_push_run_index]);
   kapama_baski_gucu = double(rx_data[client_baski_gucu_index]) * kapama_baski_gucu_ks;
   kapi_acma_derecesi = double(rx_data[client_derece_index]) * 2;
+  ref_adim_sayisi = (rx_data[client_adim_sayisi_MSB_index] << 8)
+                    | (rx_data[client_adim_sayisi_LSB_index]);
  }
 }
 
 void send_ack_with_status(void)
 {
  uint8_t ack[4 + SERIAL_SIZE];
+  tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF; //*
+  tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;        //*
+
  memcpy(&ack[4], tx_data, SERIAL_SIZE);
  ack[0] = 0xAA;
  ack[1] = 0x55;
@@ -6215,8 +6234,9 @@ void master_send_task(void *arg)
   tx_data[client_kuvvet_siniri_index] = EEPROM.read(21);
   tx_data[client_push_run_index] = push_run_flag;
   tx_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
-  tx_data[client_derece_index] = kapi_acma_derecesi / 2; //*
-  tx_data[client_adim_sayisi_index] = adim_sayisi / 10;  //*
+  tx_data[client_derece_index] = kapi_acma_derecesi / 2;             //*
+  tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF; //*
+  tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;        //*
 
   memcpy(&tx[3], tx_data, SERIAL_SIZE);
 
