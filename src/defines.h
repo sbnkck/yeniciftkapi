@@ -30,7 +30,7 @@ int kapi_acma_derecesi = 150;
 #define max_duty 1500
 #define min_duty 100
 #define hiz_katsayisi 10 // mobil uygulamadan gelen hız bu katsayı ile çarpılıp rpm e dönüştürülüyor
-#define bekleme_duty 50
+#define bekleme_duty 400
 #define set_voltage 30
 #define set_volatage_factor 150 // voltaj değişimin duty e etkileceğei oranın katsayısı
 #define hesaplanan_min_duty 100
@@ -138,7 +138,7 @@ volatile bool tanima_hizi_flag = false;
 bool kapanma_error_flag = false;
 bool baski_flag = false;
 int tanima_hizi = 150;
-uint16_t motor_baslangic_duty = 400;
+uint16_t motor_baslangic_duty = 200;
 int eeprom_size = 500;
 bool mentese_yonu = true; // menteşe yonu değiştirme
 int Max_RPM = 1200;
@@ -319,7 +319,6 @@ TaskHandle_t ble_arg = NULL;
 TaskHandle_t ble_data_al_task_arg = NULL;
 TaskHandle_t ble_client_task_arg = NULL;
 TaskHandle_t tr_mission_task_arg = NULL;
-TaskHandle_t kapi_haberlesme_arg = NULL;
 UBaseType_t uxHighWaterMark;
 
 /*********update*/ ////////////

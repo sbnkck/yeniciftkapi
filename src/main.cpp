@@ -278,7 +278,6 @@ void print_log_baslangic();
 // void ble_client_task(void *arg);
 /*trasnsistör lerin durumunu yöneten task aplikasyondan seçilen görev atamasına göre farklı şekilde transistörler farklı çalışacak*/
 void tr_mission_task(void *arg);
-void kapi_haberlesme(void *arg);
 static BLERemoteCharacteristic *pRemoteCharacteristic;
 static BLEAdvertisedDevice *myDevice;
 TaskHandle_t xHandle = NULL;
@@ -383,35 +382,7 @@ void setup()
  Amper_Queue = xQueueCreate(5, sizeof(double));
  Serial.begin(115200);      //  Seri Haberleşme başlatıldı.
  EEPROM.begin(eeprom_size); //  EEPROM belirlenen boyutta başlatıldı.
- // Serial1.begin(9600, SERIAL_8N1, Rx, Tx, true, 10);
- // delay(100);
- // Serial1.flush();
  uart_dma_init();
- xTaskCreate(
-     uart_rx_task,   // Task fonksiyonu
-     "uart_rx_task", // Task adı
-     4096,           // Stack size (yeterli)
-     NULL,
-     10, // Öncelik (yüksek olmalı!)
-     NULL);
-
- // -------------------------------
- // 2) MASTER Gönderim Task’ı
- // -------------------------------
- xTaskCreate(
-     master_send_task,
-     "master_send_task",
-     4096,
-     NULL,
-     8, // RX'ten bir tık düşük öncelik
-     NULL);
- // xTaskCreate(
- //     client_send_task,
- //     "client_send_task",
- //     4096,
- //     NULL,
- //     8, // RX'ten bir tık düşük öncelik
- //     NULL);
  /****************************/
  akim_mutex = xSemaphoreCreateMutex();
  xSemaphoreGive(akim_mutex);
@@ -594,14 +565,16 @@ void setup()
  xTaskCreatePinnedToCore(motor_akim_oku, "motor_akim_oku", 2048 * 2, NULL, 1, &motor_akim_oku_arg, 1);
  xTaskCreatePinnedToCore(ble_task, "ble_task", 1024 * 3, NULL, 1, &ble_arg, 0);
  xTaskCreate(tr_mission_task, "tr_mission_task", 1024, NULL, 1, &tr_mission_task_arg);
- // xTaskCreate(kapi_haberlesme, "kapi_haberlesme", 1024 * 2, NULL, 1, &kapi_haberlesme_arg);
 
  test_func(); // güncelleme ve ble işlemlerinden sonra test yaptırıyoruz ki sıkıntı çıktığı taktıirde güncelleme yapabilelim
-
+ xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, NULL, 10, NULL, 1);
+ // -------------------------------
+ // 2) MASTER Gönderim Task’ı
+ // -------------------------------
+ xTaskCreatePinnedToCore(master_send_task, "master_send_task", 4096, NULL, 8, NULL, 1);
  // xTaskCreate(seri_yazdir, "seri_yazdir", 2048 * 4, NULL, 1, &seri_yazdir_arg);
  xTaskCreate(fault_task, "fault_task", 2048 * 4, NULL, 12, &fault_task_arg);
  xTaskCreatePinnedToCore(hareket_kontrol, "hareket_kontrol", 2048 * 4, NULL, 11, &hareket_kontrol_arg, 1);
- // xTaskCreate(hareket_kontrol, "hareket_kontrol", 2048 * 4, NULL, 11, &hareket_kontrol_arg);
  xTaskCreate(ac_task, "ac_task", 2048 * 10, NULL, 10, &ac_task_arg);
  xTaskCreate(seri_oku, "seri_oku", 2048, NULL, 3, &seri_oku_arg);
  xTaskCreatePinnedToCore(rpm_olcum, "rpm_olcum", 2048, NULL, 8, &rpm_olcum_arg, 1);
@@ -1579,7 +1552,10 @@ void kapi_ac_fonksiyonu()
     Serial.println("kapi ilerledi..");
     rpmTespit = 0;
     if (kapi_rutbesi == MASTER)
+    {
      tx_data[client_ac_index] = 1;
+     Serial.println("Slave ac komutu gonderildi.");
+    }
     break;
    }
    if (count > (kapama_baski_suresi / 10)) // 1.5 sn bekleyecek açılamazsa kapata geçecek
@@ -1640,25 +1616,36 @@ void kapi_ac_fonksiyonu()
    zaman_timeout = 0;
    Serial.println("time out basladi");
    PrintLog("time+out+basladi");
-   while (adim_sayisi >= (maksimum_kapi_boyu - 10))
+   if (kapi_rutbesi == MASTER)
    {
-    zaman_timeout++;
-    if (zaman_timeout <= acik_kalma_suresi)
+    while (adim_sayisi >= (maksimum_kapi_boyu - 10))
     {
-     vTaskDelay(10 / portTICK_RATE_MS);
-     if (digitalRead(ac_pini) == 1 || digitalRead(asansor_ac_pini) == 1)
+     zaman_timeout++;
+     if (zaman_timeout <= acik_kalma_suresi)
      {
-      zaman_timeout = 0;
+      vTaskDelay(10 / portTICK_RATE_MS);
+      if (digitalRead(ac_pini) == 1 || digitalRead(asansor_ac_pini) == 1)
+      {
+       zaman_timeout = 0;
+      }
+     }
+     else
+     {
+      break;
      }
     }
-    else
+   }
+   else
+   {
+    while (rx_data[client_kapa_index] == 0)
     {
-     break;
+     vTaskDelay(10 / portTICK_RATE_MS);
     }
    }
    if (kapi_rutbesi == MASTER)
    {
     tx_data[client_kapa_index] = 1;
+    Serial.println("Slave kapat komutu gonderildi.");
     // vTaskDelay(2500 / portTICK_RATE_MS);
    }
    Serial.println("time out bitti");
@@ -2574,7 +2561,10 @@ static void ac_task(void *arg)
      aydinlatma_led_state = 1;
      hareket_sinyali = kapi_ac_sinyali;
      if (kapi_rutbesi == MASTER)
+     {
       tx_data[client_ac_index] = 1;
+      Serial.println("Slave kapat komutu gonderildi.");
+     }
      Serial.print("hareket_sinyali : ");
      Serial.println(hareket_sinyali);
     }
@@ -2613,14 +2603,20 @@ static void ac_task(void *arg)
      aydinlatma_led_state = 1;
      hareket_sinyali = kapi_ac_sinyali;
      if (kapi_rutbesi == MASTER)
+     {
       tx_data[client_ac_index] = 1;
+      Serial.println("Slave ac komutu gonderildi.");
+     }
     }
     else // kapiyi ac ile kapa
     {
      kapat_flag = true;
      bluetooth_kapi_kapa = true;
      if (kapi_rutbesi == MASTER)
+     {
       tx_data[client_kapa_index] = 1;
+      Serial.println("Slave kapat komutu gonderildi.");
+     }
      Serial.println("ac butonu ile kapama...");
      PrintLog("ac+butonu+ile+kapama");
     }
@@ -3043,7 +3039,7 @@ void ble_data_guncelle()
   // Serial.print("amper: ");
   // Serial.println(ble_yollanan_dizi_global[95]);
   //   }
-  Serial.println("ble uzun data");
+  // Serial.println("ble uzun data");
   // }
  }
 }
@@ -3938,7 +3934,7 @@ void eeprom_oku_fn()
  calisma_yontemi = EEPROM.read(23); //  EEPROM(23) Okunuyor.
  if ((calisma_yontemi == 0) || (calisma_yontemi > 3))
  {                                   //  Çalışma Yöntemi
-  calisma_yontemi = 2;               //  Varsayılan Değer = 2
+  calisma_yontemi = otomatik_kapan;  //  Varsayılan Değer = 2
   EEPROM.write(23, calisma_yontemi); //  Aç Sinyali ile kapıyı aç, aç sinyali kesilince kapıyı kapat
   calisma_yontemi = EEPROM.read(23);
   printf("calisma_yontemi_vrsyln______________: %d \n", calisma_yontemi);
@@ -4913,27 +4909,6 @@ void kalibrasyon_fn() // kullanılmıyor
  eeproma_yaz_istegi = 1;
  kalibrasyon_aktif = 0;
 }
-// static void ble_task(void *arg)
-// {
-
-//  while (1)
-//  {
-
-//   vTaskDelay(500 / portTICK_RATE_MS);
-
-//   /* BLE Data Gönderme */
-//   if (kapi_rutbesi == MASTER)
-//   {
-//    ble_data_guncelle();
-//   }
-
-//   /* Kalibrasyon Kontrolü */
-//   if (kalibrasyon_aktif == 1)
-//   {
-//    kalibrasyon_fn();
-//   }
-//  }
-// }
 static void ble_task(void *arg)
 {
 
@@ -4943,27 +4918,24 @@ static void ble_task(void *arg)
   vTaskDelay(500 / portTICK_RATE_MS);
   // xSemaphoreTake(akim_mutex, 100);
   /* BLE Data Gönderme */
-  if (kapi_rutbesi == MASTER)
+  if (ble_send_data_repeat == 0)
   {
-   if (ble_send_data_repeat == 0)
-   {
-    ble_data_guncelle();
-   }
-   else
-   {
-    for (int i = 0; i < ble_send_data_repeat; i++)
-    {
-     ble_data_send = true;
-     ble_data_guncelle();
-     vTaskDelay(500 / portTICK_RATE_MS);
-    }
-    ble_send_data_repeat = 0;
-   }
-   if (acil_stop_flag == true)
+   ble_data_guncelle();
+  }
+  else
+  {
+   for (int i = 0; i < ble_send_data_repeat; i++)
    {
     ble_data_send = true;
     ble_data_guncelle();
+    vTaskDelay(500 / portTICK_RATE_MS);
    }
+   ble_send_data_repeat = 0;
+  }
+  if (acil_stop_flag == true)
+  {
+   ble_data_send = true;
+   ble_data_guncelle();
   }
 
   /* Kalibrasyon Kontrolü */
@@ -6168,7 +6140,7 @@ void handle_data_frame(uint8_t *payload, int len)
  {
   memcpy(rx_data, payload, min(len, (int)sizeof(rx_data)));
   send_ack_with_status();
-  calisma_yontemi = ac_kapat;
+  // calisma_yontemi = ac_kapat;
 
   if (rx_data[client_ac_index] == 1 && rx_data[client_dur_index] == 0)
   {
