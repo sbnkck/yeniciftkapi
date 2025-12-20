@@ -1100,7 +1100,7 @@ static void hareket_kontrol(void *arg)
     }
     if (kapi_rutbesi == SLAVE && (adim_sayisi < kilit_birakma_noktasi)) // kapanaırken kilit noktasndan sonrasına geldiğini servere saöyluyor
     {
-     server_data[client_kilit_index] = 1;
+     tx_data[client_kilit_index] = 1;
     }
    }
   }
@@ -1563,10 +1563,10 @@ void kapi_ac_fonksiyonu()
   while (hareket_sinyali != kapi_kapat_sinyali)
   {
 
-   if (adim_sayisi < hizlanma_boy_baslangici + 150 && count > 5) // iki kanatlıda baskı yediği zaman diğer kanata da dur diyor
-   {
-    client_data[client_dur_index] = 1;
-   }
+   // if (adim_sayisi < hizlanma_boy_baslangici + 150 && count > 5) // iki kanatlıda baskı yediği zaman diğer kanata da dur diyor
+   // {
+   //  client_data[client_dur_index] = 1;
+   // }
 
    count++;
    //    duty=motor_baslangic_duty;
@@ -1578,7 +1578,8 @@ void kapi_ac_fonksiyonu()
     Serial.println();
     Serial.println("kapi ilerledi..");
     rpmTespit = 0;
-    client_data[client_ac_index] = 1;
+    if (kapi_rutbesi == MASTER)
+     tx_data[client_ac_index] = 1;
     break;
    }
    if (count > (kapama_baski_suresi / 10)) // 1.5 sn bekleyecek açılamazsa kapata geçecek
@@ -1613,13 +1614,13 @@ void kapi_ac_fonksiyonu()
      faulttan_kapata == true)
  //(fault_siniri>0 && digitalRead(ac_pini) == 0)) // açma - durdurma işlemi.
  {
-  printf("maksimum_kapi_boyu = %.2f faulttan_kapata =%d tanima_hizi_flag = %d\n",maksimum_kapi_boyu,faulttan_kapata,tanima_hizi_flag);
+  printf("maksimum_kapi_boyu = %.2f faulttan_kapata =%d tanima_hizi_flag = %d\n", maksimum_kapi_boyu, faulttan_kapata, tanima_hizi_flag);
   Serial.println("kapanma 1");
   PrintLog("kapanma+1");
   faulttan_kapata = false; // faulttan sonra ac sinyali kesilince bu if e girdi.bayrağı sıfırlıyoruz
   if (kapi_rutbesi == SLAVE)
   {
-   server_data[client_kilit_index] = 0;
+   tx_data[client_kilit_index] = 0;
   }
   fault_siniri = 0;             // fault ledi kesmesi sistemi durdurma sayacı sıfırlandı
   kapattan_aca = false;         // ac tamamlanınca kapattan aca flag sıfırlanıyor
@@ -1655,9 +1656,9 @@ void kapi_ac_fonksiyonu()
      break;
     }
    }
-   if (mod == cift_kanat)
+   if (kapi_rutbesi == MASTER)
    {
-    client_data[client_kapa_index] = 1;
+    tx_data[client_kapa_index] = 1;
     // vTaskDelay(2500 / portTICK_RATE_MS);
    }
    Serial.println("time out bitti");
@@ -1712,18 +1713,18 @@ void kapi_kapa_fonksiyonu()
   kapat_test_aktif = false;
  }
 
- if ((mod == cift_kanat) && (adim_sayisi < kilit_birakma_noktasi) && (server_data[client_kilit_index] == 0)) // server klit bölgesine gelmediyse
+ if ((kapi_rutbesi == MASTER) && (adim_sayisi < kilit_birakma_noktasi) && (rx_data[client_kilit_index] == 0)) // server klit bölgesine gelmediyse
  {
   motor_surme(200);
-  while (server_data[client_kilit_index] == 0 && ac_flag == false) // ben kilit bölgesine geldim
+  while (rx_data[client_kilit_index] == 0 && ac_flag == false) // ben kilit bölgesine geldim
   {
    vTaskDelay(100 / portTICK_RATE_MS);
-   client_data[client_kapa_index] = 1;
+   tx_data[client_kapa_index] = 1;
   }
  }
  if (kapi_rutbesi == SLAVE && (adim_sayisi < kilit_birakma_noktasi)) // klit bölgesine geldiysen geldiğini söyle
  {
-  server_data[client_kilit_index] = 1;
+  tx_data[client_kilit_index] = 1;
  }
 
  if (kapat_time_out_flag)
@@ -1898,7 +1899,12 @@ void kapi_kapa_fonksiyonu()
      {
       if (adim_sayisi < hizlanma_boy_baslangici + 150)
       {
-       client_data[client_dur_index] = 1;
+       if (kapi_rutbesi == MASTER)
+       {
+        tx_data[client_dur_index] = 1;
+        Serial.println("Slave dur komutu gonderildi.");
+       }
+       Serial.println("Slave e dur mesajı set edildi.");
       }
      }
 
@@ -1911,7 +1917,12 @@ void kapi_kapa_fonksiyonu()
       Serial.println();
       rpmTespit = 0;
       Serial.print("kapi 5 adim ilerledi : ");
-      client_data[client_kapa_index] = 1;
+      if (kapi_rutbesi == MASTER)
+
+      {
+       tx_data[client_kapa_index] = 1;
+       Serial.println("Slave kapa komutu gonderildi.");
+      }
       // PrintLog("kapı+5+adım+ilerledi");
       // vTaskDelay(10 / portTICK_RATE_MS);
       break;
@@ -1920,7 +1931,11 @@ void kapi_kapa_fonksiyonu()
      if (count > (kapama_baski_suresi / 10)) // ayarlanan  sn kadar bekleyecek kapatılamazsa aça geçecek
      {
       Serial.println("kapatta iken kilit oncesi  time out girildi");
-      client_data[client_ac_index] = 1;
+      if (kapi_rutbesi == MASTER)
+      {
+       tx_data[client_ac_index] = 1;
+       Serial.println("Slave ac komutu gonderildi.");
+      }
       // vTaskDelay(1500 / portTICK_RATE_MS);
       ac_test_aktif = true;
       /**********kapı kapatırken time outa girerse aç sinyali göndeririyoruz***************/
@@ -2143,8 +2158,8 @@ void kapi_ac_hazirlik()
  }
  else
  {
-  Max_RPM = double(client_data[client_max_rpm_index]) * hiz_katsayisi;
-  kapi_acma_derecesi = double(client_data[client_derece_index]) * 2;
+  Max_RPM = double(rx_data[client_max_rpm_index]) * hiz_katsayisi;
+  kapi_acma_derecesi = double(rx_data[client_derece_index]) * 2;
   maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0)) / 2.5;
  }
  const float base_rpm = 100.0;       // taban kalkış RPM
@@ -2405,8 +2420,8 @@ void kapi_kapat_hazirlik()
  }
  else
  {
-  kapama_max_rpm = double(client_data[client_kapama_max_rpm_index]) * hiz_katsayisi;
-  kapi_acma_derecesi = double(client_data[client_derece_index]) * 2;
+  kapama_max_rpm = double(rx_data[client_kapama_max_rpm_index]) * hiz_katsayisi;
+  kapi_acma_derecesi = double(rx_data[client_derece_index]) * 2;
   maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0)) / 2.5;
  }
 
@@ -2490,7 +2505,11 @@ static void ac_task(void *arg)
     hareket_sinyali = kapi_bosta_sinyali;
     acil_stop_flag = true;
 
-    client_data[client_dur_index] = 1;
+    if (kapi_rutbesi == MASTER)
+    {
+     tx_data[client_dur_index] = 1;
+     Serial.println("Slave dur komutu gonderildi.");
+    }
     acil_stop_sayici++;
     eeproma_yaz_istegi = 1;
     motor_surme(0);
@@ -2554,7 +2573,8 @@ static void ac_task(void *arg)
      hedef_sure = 60.0 * 1000000.0 / (Max_RPM * tur_sayisi); // 8333; // (4800000.0 * 1.2) / Max_RPM;
      aydinlatma_led_state = 1;
      hareket_sinyali = kapi_ac_sinyali;
-     client_data[client_ac_index] = 1;
+     if (kapi_rutbesi == MASTER)
+      tx_data[client_ac_index] = 1;
      Serial.print("hareket_sinyali : ");
      Serial.println(hareket_sinyali);
     }
@@ -2592,13 +2612,15 @@ static void ac_task(void *arg)
      hedef_sure = 60.0 * 1000000.0 / (Max_RPM * tur_sayisi); // 8333; // (4800000.0 * 1.2) / Max_RPM;
      aydinlatma_led_state = 1;
      hareket_sinyali = kapi_ac_sinyali;
-     client_data[client_ac_index] = 1;
+     if (kapi_rutbesi == MASTER)
+      tx_data[client_ac_index] = 1;
     }
     else // kapiyi ac ile kapa
     {
      kapat_flag = true;
      bluetooth_kapi_kapa = true;
-     client_data[client_kapa_index] = 1;
+     if (kapi_rutbesi == MASTER)
+      tx_data[client_kapa_index] = 1;
      Serial.println("ac butonu ile kapama...");
      PrintLog("ac+butonu+ile+kapama");
     }
@@ -2660,7 +2682,11 @@ static void ac_task(void *arg)
     duty = tanima_hizi;
     vTaskDelay(200 / portTICK_RATE_MS);
     hareket_sinyali = kapi_kapat_sinyali;
-    client_data[client_kapa_index] = 1;
+    if (kapi_rutbesi == MASTER)
+    {
+     tx_data[client_kapa_index] = 1;
+     Serial.println("Slave kapa komutu gonderildi.");
+    }
    }
    kapat_flag = false;
   }
@@ -6115,7 +6141,7 @@ void frame_parser_push(uint8_t *buf, int len)
 void handle_ack_frame(uint8_t *payload, int len)
 {
  uart_ack_geldi = true;
- memcpy(server_data, payload, min(len, (int)sizeof(server_data)));
+ memcpy(rx_data, payload, min(len, (int)sizeof(rx_data)));
  // printf("server_data");
  // for (size_t i = 0; i < sizeof(server_data); i++)
  // {
@@ -6140,59 +6166,43 @@ void handle_data_frame(uint8_t *payload, int len)
  }
  else // CLIENT
  {
-  // SERVER → CLIENT yönlü data = client_data
-  memcpy(client_data, payload, min(len, (int)sizeof(client_data)));
+  memcpy(rx_data, payload, min(len, (int)sizeof(rx_data)));
   send_ack_with_status();
   calisma_yontemi = ac_kapat;
-  // printf("client_data");
-  // for (size_t i = 0; i < sizeof(client_data); i++)
-  // {
-  //  printf("[%d] : %03d", i, client_data[i]);
-  // }
-  // printf("\n");
-  if (client_data[client_ac_index] == 1 && client_data[client_dur_index] == 0)
+
+  if (rx_data[client_ac_index] == 1 && rx_data[client_dur_index] == 0)
   {
    ac_flag = true;
    bluetooth_kapi_ac = true;
   }
-  if (client_data[client_kapa_index] == 1)
+  if (rx_data[client_kapa_index] == 1)
   {
    bluetooth_kapi_kapa = true;
    kapat_flag = true;
   }
-  if (client_data[client_dur_index] == 1)
+  if (rx_data[client_dur_index] == 1)
   {
    hareket_sinyali = kapi_bosta_sinyali;
-   // if (adim_sayisi < hizlanma_boy_baslangici)
-   // {
-   //  baski_flag = true;
-   // }
-
    motor_surme(200);
   }
-  Max_RPM = double(client_data[client_max_rpm_index]) * hiz_katsayisi;
-  kapama_max_rpm = double(client_data[client_kapama_max_rpm_index]) * hiz_katsayisi;
-  mentese_yonu = !bool(client_data[client_mentese_index]);
-  acil_stop_client = uint8_t(client_data[client_acil_stop_index]);
-  kapama_baski_suresi = double(client_data[client_baski_suresi_index]) * kapama_baski_suresi_ks * 2;
-  acik_kalma_suresi = (double(client_data[client_acik_kalma_suresi_index]) * 100);
-  akim_siniri = double(client_data[client_kuvvet_siniri_index]);
-  akim_siniri = 2 * akim_siniri / 10;
-  akim_siniri = 0.2535 * akim_siniri - 1.1008;
-  push_run_flag = bool(client_data[client_push_run_index]);
-  kapama_baski_gucu = double(client_data[client_baski_gucu_index]) * kapama_baski_gucu_ks;
-  // Serial.print("client_data[client_derece_index] : ");
-  // Serial.println(double(client_data[client_derece_index]));
-  kapi_acma_derecesi = double(client_data[client_derece_index]) * 2;
-  maksimum_kapi_boyu = ((kapi_acma_derecesi) * (10000.0 / 821.0)) / 2.5;
- // =client_data[client_kuvvet_siniri_index]*10;
+  Max_RPM = double(rx_data[client_max_rpm_index]) * hiz_katsayisi;
+  kapama_max_rpm = double(rx_data[client_kapama_max_rpm_index]) * hiz_katsayisi;
+  mentese_yonu = !bool(rx_data[client_mentese_index]);
+  acil_stop_client = uint8_t(rx_data[client_acil_stop_index]);
+  kapama_baski_suresi = double(rx_data[client_baski_suresi_index]) * kapama_baski_suresi_ks * 2;
+  acik_kalma_suresi = (double(rx_data[client_acik_kalma_suresi_index]) * 100);
+  akim_siniri = double(rx_data[client_kuvvet_siniri_index]);
+
+  push_run_flag = bool(rx_data[client_push_run_index]);
+  kapama_baski_gucu = double(rx_data[client_baski_gucu_index]) * kapama_baski_gucu_ks;
+  kapi_acma_derecesi = double(rx_data[client_derece_index]) * 2;
  }
 }
 
 void send_ack_with_status(void)
 {
  uint8_t ack[4 + SERIAL_SIZE];
- memcpy(&ack[4], server_data, SERIAL_SIZE);
+ memcpy(&ack[4], tx_data, SERIAL_SIZE);
  ack[0] = 0xAA;
  ack[1] = 0x55;
  ack[2] = 0x01;        // ACK kodu
@@ -6224,23 +6234,23 @@ void master_send_task(void *arg)
   tx[0] = 0xFF;
   tx[1] = 0xFF;
   tx[2] = SERIAL_SIZE;
-  client_data[client_max_rpm_index] = EEPROM.read(11);
-  client_data[client_kapama_max_rpm_index] = EEPROM.read(16);
-  client_data[client_mentese_index] = mentese_yonu;
-  client_data[client_acil_stop_index] = digitalRead(stop_pini);
-  client_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
-  client_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
-  client_data[client_kuvvet_siniri_index] = EEPROM.read(21);
-  client_data[client_push_run_index] = push_run_flag;
-  client_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
-  client_data[client_derece_index] = kapi_acma_derecesi / 2; //*
-  client_data[client_adim_sayisi_index] = adim_sayisi/10; //*
+  tx_data[client_max_rpm_index] = EEPROM.read(11);
+  tx_data[client_kapama_max_rpm_index] = EEPROM.read(16);
+  tx_data[client_mentese_index] = mentese_yonu;
+  tx_data[client_acil_stop_index] = digitalRead(stop_pini);
+  tx_data[client_baski_suresi_index] = kapama_baski_suresi / (kapama_baski_suresi_ks * 2);
+  tx_data[client_acik_kalma_suresi_index] = acik_kalma_suresi / 100;
+  tx_data[client_kuvvet_siniri_index] = EEPROM.read(21);
+  tx_data[client_push_run_index] = push_run_flag;
+  tx_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
+  tx_data[client_derece_index] = kapi_acma_derecesi / 2; //*
+  tx_data[client_adim_sayisi_index] = adim_sayisi / 10;  //*
 
-  memcpy(&tx[3], client_data, SERIAL_SIZE);
+  memcpy(&tx[3], tx_data, SERIAL_SIZE);
 
   uart_ack_geldi = false;
 
-  hexDump("SERVER TX client_data", tx, 3 + SERIAL_SIZE);
+  hexDump("SERVER TX tx_data", tx, 3 + SERIAL_SIZE);
   uart_write_bytes(UART_NUM_1, (const char *)tx, 3 + SERIAL_SIZE);
 
   unsigned long t0 = millis();
@@ -6253,9 +6263,9 @@ void master_send_task(void *arg)
   }
   else
   {
-   client_data[client_ac_index] = 0;
-   client_data[client_kapa_index] = 0;
-   client_data[client_dur_index] = 0;
+   tx_data[client_ac_index] = 0;
+   tx_data[client_kapa_index] = 0;
+   tx_data[client_dur_index] = 0;
   }
  }
 }

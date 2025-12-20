@@ -9,8 +9,8 @@ bool motor_ilk_tahrik_flag = false;
 #define SLAVE 0
 uint8_t kapi_rutbesi = MASTER;
 #define SERIAL_SIZE 50
-uint8_t client_data[SERIAL_SIZE] = {0};
-uint8_t server_data[SERIAL_SIZE] = {0};
+uint8_t tx_data[SERIAL_SIZE] = {0};
+uint8_t rx_data[SERIAL_SIZE] = {0};
 volatile bool uart_ack_geldi = false;
 
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
