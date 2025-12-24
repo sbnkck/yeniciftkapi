@@ -567,12 +567,9 @@ void setup()
  xTaskCreate(tr_mission_task, "tr_mission_task", 1024, NULL, 1, &tr_mission_task_arg);
 
  test_func(); // güncelleme ve ble işlemlerinden sonra test yaptırıyoruz ki sıkıntı çıktığı taktıirde güncelleme yapabilelim
- xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, NULL, 10, NULL, 1);
- // -------------------------------
- // 2) MASTER Gönderim Task’ı
- // -------------------------------
- xTaskCreatePinnedToCore(master_send_task, "master_send_task", 4096, NULL, 8, NULL, 1);
- // xTaskCreate(seri_yazdir, "seri_yazdir", 2048 * 4, NULL, 1, &seri_yazdir_arg);
+ xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, NULL, 10, NULL, 0);
+ xTaskCreatePinnedToCore(master_send_task, "master_send_task", 4096, NULL, 8, NULL, 0);
+ xTaskCreate(seri_yazdir, "seri_yazdir", 1024 * 2, NULL, 1, &seri_yazdir_arg);
  xTaskCreate(fault_task, "fault_task", 2048 * 4, NULL, 12, &fault_task_arg);
  xTaskCreatePinnedToCore(hareket_kontrol, "hareket_kontrol", 2048 * 4, NULL, 11, &hareket_kontrol_arg, 1);
  xTaskCreate(ac_task, "ac_task", 2048 * 10, NULL, 10, &ac_task_arg);
@@ -1038,6 +1035,13 @@ static void hareket_kontrol(void *arg)
    }
    if (hareket_sinyali == kapi_kapat_sinyali)
    {
+    if ((kapi_rutbesi == MASTER) && (adim_sayisi < (maksimum_kapi_boyu - 1)))
+    {
+     tx_data[client_kapa_index] = 1;
+
+     Serial.println("Slave kapa komutu gonderildi.3");
+    }
+
     kapi_kapa_fonksiyonu();
    }
    if (baski_flag)
@@ -1554,7 +1558,8 @@ void kapi_ac_fonksiyonu()
     if (kapi_rutbesi == MASTER)
     {
      tx_data[client_ac_index] = 1;
-     Serial.println("Slave ac komutu gonderildi.");
+
+     Serial.println("Slave ac komutu gonderildi.1");
     }
     break;
    }
@@ -1631,16 +1636,22 @@ void kapi_ac_fonksiyonu()
      }
      else
      {
+
+      // tx_data[client_kapa_index] = 1;
+      // Serial.println("Slave kapat komutu gonderildi.2");
+      // vTaskDelay(DATA_TIMEOUT / portTICK_RATE_MS);
+
       break;
      }
     }
    }
    else
    {
+     zaman_timeout = 0;
     while (adim_sayisi >= (maksimum_kapi_boyu - 10) && (rx_data[client_kapa_index] == 0))
     {
      zaman_timeout++;
-     if (zaman_timeout <= (acik_kalma_suresi + 5))
+     if (zaman_timeout <= (acik_kalma_suresi + 500))
      {
       vTaskDelay(10 / portTICK_RATE_MS);
       if (digitalRead(ac_pini) == 1 || digitalRead(asansor_ac_pini) == 1)
@@ -1650,15 +1661,10 @@ void kapi_ac_fonksiyonu()
      }
      else
      {
+
       break;
      }
     }
-   }
-   if (kapi_rutbesi == MASTER)
-   {
-    tx_data[client_kapa_index] = 1;
-    Serial.println("Slave kapat komutu gonderildi.");
-    // vTaskDelay(2500 / portTICK_RATE_MS);
    }
    Serial.println("time out bitti");
    PrintLog("time+out+bitti");
@@ -1915,12 +1921,13 @@ void kapi_kapa_fonksiyonu()
       Serial.println();
       rpmTespit = 0;
       Serial.print("kapi 5 adim ilerledi : ");
-      if (kapi_rutbesi == MASTER)
+      // if (kapi_rutbesi == MASTER)
 
-      {
-       tx_data[client_kapa_index] = 1;
-       Serial.println("Slave kapa komutu gonderildi.");
-      }
+      // {
+      //  tx_data[client_kapa_index] = 1;
+
+      //  Serial.println("Slave kapa komutu gonderildi.3");
+      // }
       // PrintLog("kapı+5+adım+ilerledi");
       // vTaskDelay(10 / portTICK_RATE_MS);
       break;
@@ -1932,7 +1939,8 @@ void kapi_kapa_fonksiyonu()
       if (kapi_rutbesi == MASTER)
       {
        tx_data[client_ac_index] = 1;
-       Serial.println("Slave ac komutu gonderildi.");
+
+       Serial.println("Slave ac komutu gonderildi.4");
       }
       // vTaskDelay(1500 / portTICK_RATE_MS);
       ac_test_aktif = true;
@@ -2565,17 +2573,18 @@ static void ac_task(void *arg)
      bluetooth_kapi_ac = false;
      Serial.println("ac hareketi yontem 1-2");
      PrintLog("ac+hareketi+yontem+1+2");
+     if (kapi_rutbesi == MASTER)
+     {
+      tx_data[client_ac_index] = 1;
+      vTaskDelay(DATA_TIMEOUT / portTICK_RATE_MS);
+      Serial.println("Slave ac komutu gonderildi.5");
+     }
      kapi_ac_hazirlik();
      duty = motor_baslangic_duty; // Max_RPM / RPM_katsayisi;
      Max_RPM = hedefRPMharitasi[0];
      hedef_sure = 60.0 * 1000000.0 / (Max_RPM * tur_sayisi); // 8333; // (4800000.0 * 1.2) / Max_RPM;
      aydinlatma_led_state = 1;
      hareket_sinyali = kapi_ac_sinyali;
-     if (kapi_rutbesi == MASTER)
-     {
-      tx_data[client_ac_index] = 1;
-      Serial.println("Slave kapat komutu gonderildi.");
-     }
      Serial.print("hareket_sinyali : ");
      Serial.println(hareket_sinyali);
     }
@@ -2616,7 +2625,8 @@ static void ac_task(void *arg)
      if (kapi_rutbesi == MASTER)
      {
       tx_data[client_ac_index] = 1;
-      Serial.println("Slave ac komutu gonderildi.");
+
+      Serial.println("Slave ac komutu gonderildi.6");
      }
     }
     else // kapiyi ac ile kapa
@@ -2626,7 +2636,8 @@ static void ac_task(void *arg)
      if (kapi_rutbesi == MASTER)
      {
       tx_data[client_kapa_index] = 1;
-      Serial.println("Slave kapat komutu gonderildi.");
+
+      Serial.println("Slave kapat komutu gonderildi.7");
      }
      Serial.println("ac butonu ile kapama...");
      PrintLog("ac+butonu+ile+kapama");
@@ -2690,7 +2701,8 @@ static void ac_task(void *arg)
     if (kapi_rutbesi == MASTER)
     {
      tx_data[client_kapa_index] = 1;
-     Serial.println("Slave kapa komutu gonderildi.");
+
+     Serial.println("Slave kapa komutu gonderildi.8");
     }
     // vTaskDelay(200 / portTICK_RATE_MS);
     hareket_sinyali = kapi_kapat_sinyali;
@@ -4460,8 +4472,8 @@ static void seri_yazdir(void *arg)
   vTaskDelay(50 / portTICK_RATE_MS);
   // xSemaphoreTake(UartMutex,portMAX_DELAY);
   // Serial.println("-----------------------------");
-  printf("sure : %.2f rpm : %d bobin_fark_sure : %.2f hedef_sure : %.2f adim_sayisi : %d hesaplanan :%d duty :%.2f hata : %.2f sure_integral : %2.f hedefRPMharitasi : %d \n",
-         sure_global, rpm, bobin_fark_sure, hedef_sure, adim_sayisi, hesaplanan, duty, hata, sure_integral, hedefRPMharitasi[adim_sayisi]);
+  printf("sure : %.2f rpm : %d bobin_fark_sure : %.2f ref_adim_sayisi : %d adim_sayisi : %d hesaplanan :%d duty :%.2f hata : %.2f sure_integral : %2.f hedefRPMharitasi : %d \n",
+         sure_global, rpm, bobin_fark_sure, ref_adim_sayisi, adim_sayisi, hesaplanan, duty, hata, sure_integral, hedefRPMharitasi[adim_sayisi]);
  }
 }
 
@@ -6125,8 +6137,7 @@ void handle_ack_frame(uint8_t *payload, int len)
 {
  uart_ack_geldi = true;
  memcpy(rx_data, payload, min(len, (int)sizeof(rx_data)));
- ref_adim_sayisi = (rx_data[client_adim_sayisi_MSB_index] << 8)
-                  | (rx_data[client_adim_sayisi_LSB_index]);
+ ref_adim_sayisi = (rx_data[client_adim_sayisi_MSB_index] << 8) | (rx_data[client_adim_sayisi_LSB_index]);
  // printf("server_data");
  // for (size_t i = 0; i < sizeof(server_data); i++)
  // {
@@ -6148,7 +6159,6 @@ void handle_data_frame(uint8_t *payload, int len)
   //  printf("[%d] : %03d", i, server_data[i]);
   // }
   // printf("\n");
-
  }
  else // CLIENT
  {
@@ -6182,16 +6192,15 @@ void handle_data_frame(uint8_t *payload, int len)
   push_run_flag = bool(rx_data[client_push_run_index]);
   kapama_baski_gucu = double(rx_data[client_baski_gucu_index]) * kapama_baski_gucu_ks;
   kapi_acma_derecesi = double(rx_data[client_derece_index]) * 2;
-  ref_adim_sayisi = (rx_data[client_adim_sayisi_MSB_index] << 8)
-                    | (rx_data[client_adim_sayisi_LSB_index]);
+  ref_adim_sayisi = (rx_data[client_adim_sayisi_MSB_index] << 8) | (rx_data[client_adim_sayisi_LSB_index]);
  }
 }
 
 void send_ack_with_status(void)
 {
  uint8_t ack[4 + SERIAL_SIZE];
-  tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF; //*
-  tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;        //*
+ tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF; //*
+ tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;        //*
 
  memcpy(&ack[4], tx_data, SERIAL_SIZE);
  ack[0] = 0xAA;

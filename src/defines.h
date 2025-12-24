@@ -13,6 +13,7 @@ uint8_t tx_data[SERIAL_SIZE] = {0};
 uint8_t rx_data[SERIAL_SIZE] = {0};
 volatile bool uart_ack_geldi = false;
 uint16_t ref_adim_sayisi=0;
+#define DATA_TIMEOUT 75
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
 double duty_Kp = 0.0001;
 double sure_Kp = 0.5;
@@ -34,7 +35,7 @@ int kapi_acma_derecesi = 150;
 #define set_voltage 30
 #define set_volatage_factor 150 // voltaj değişimin duty e etkileceğei oranın katsayısı
 #define hesaplanan_min_duty 100
-#define hesaplanan_max_duty 250
+#define hesaplanan_max_duty 200
 #define kapanma_guncelleme_noktasi 100
 #define akim_hesaplanan_siniri 400
 #define acma_siniri 200
