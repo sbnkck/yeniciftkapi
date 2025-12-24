@@ -3,7 +3,7 @@
 #define defines_h
 #include <string>
 #define EDL_select true // 6edl sistemine geçildiğinde aktif edilmeli
-#define AKIM_V2 ture    // LMV 321 li devremiz kullanılmaya başladığında aktif edilmeli
+#define AKIM_V2 true    // LMV 321 li devremiz kullanılmaya başladığında aktif edilmeli
 bool motor_ilk_tahrik_flag = false;
 #define MASTER 1
 #define SLAVE 0
