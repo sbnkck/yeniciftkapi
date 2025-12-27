@@ -1642,7 +1642,17 @@ void kapi_ac_fonksiyonu()
             kapi_basarisiz_ac_sayac++;
             kapi_ac_sayac--;
             // actan_kapata = true;
+            door_tx_set(client_baski_index, 1);
+            uint16_t counter = 0;
+            while ((ref_adim_sayisi > adim_sayisi) && (counter < 200))
+            {
+               vTaskDelay(100 / portTICK_RATE_MS);
+               printf("diger kapi bekleniyor\n");
+               counter++;
+            }
+            door_tx_set(client_baski_index, 0);
             kapat_flag = true;
+
             // eeproma_yaz_istegi = 1;
             baski_led_flag = true;
             break;
@@ -1726,7 +1736,7 @@ void kapi_ac_fonksiyonu()
             while (adim_sayisi >= (maksimum_kapi_boyu - 10) && (rx_local[client_kapa_index] == 0))
             {
                zaman_timeout++;
-               if (zaman_timeout <= (acik_kalma_suresi + 500))
+               if (zaman_timeout <= (acik_kalma_suresi + (500 * (!client_baski_flag)))) // master baski yediyse süreyi kendi tutar. yoksa mastere 5 sn bekler
                {
                   vTaskDelay(10 / portTICK_RATE_MS);
                   if (digitalRead(ac_pini) == 1 || digitalRead(asansor_ac_pini) == 1)
@@ -6291,6 +6301,15 @@ void handle_data_frame(uint8_t *payload, int len)
       hareket_sinyali = kapi_bosta_sinyali;
       motor_surme(200);
       printf("kapı dur geldi\n");
+   }
+   if (rx_local[client_baski_index] == 1)
+   {
+      client_baski_flag = true;
+      printf("kapı baski geldi\n");
+   }
+   else
+   {
+      client_baski_flag = false;
    }
 
    // ---- PARAMETRELER ----

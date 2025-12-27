@@ -12,11 +12,11 @@ uint8_t kapi_rutbesi = MASTER;
 uint8_t tx_data[SERIAL_SIZE] = {0};
 uint8_t rx_data[SERIAL_SIZE] = {0};
 volatile bool uart_ack_geldi = false;
-uint16_t ref_adim_sayisi=0;
+uint16_t ref_adim_sayisi = 0;
 #define DATA_TIMEOUT 100
-#define STEP_SYNC_WINDOW        100     // adım
-#define STEP_SYNC_DEADBAND      5
-#define STEP_SYNC_MAX_GAIN      0.01f  // duty %20 max değişsin
+#define STEP_SYNC_WINDOW 100 // adım
+#define STEP_SYNC_DEADBAND 5
+#define STEP_SYNC_MAX_GAIN 0.01f // duty %20 max değişsin
 constexpr float adim_derece_carpani = 5.294859f;
 
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
@@ -27,7 +27,7 @@ double sure_global = 0;
 double sure_integral = 0;
 double sure;
 int rpmTespit = 0;
-uint16_t iki_kapi_aci_farki=0;
+uint16_t iki_kapi_aci_farki = 0;
 #define ac_button_ofset 0
 #define kapi_ac 0
 #define kapi_kapa 1
@@ -79,6 +79,8 @@ uint16_t baski_duty = 0;
 #define client_kapa_index 13  // buton için
 #define client_dur_index 14   // buton için
 #define client_kilit_index 15 // kiliti geçip geçmediğini söyleyecek
+#define client_baski_index 19 // kiliti geçip geçmediğini söyleyecek
+bool client_baski_flag = false;
 #ifdef AKIM_V2
 #define test_time 50 // test func bobinlere akım uygulama süresi
 #else
