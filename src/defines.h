@@ -13,7 +13,12 @@ uint8_t tx_data[SERIAL_SIZE] = {0};
 uint8_t rx_data[SERIAL_SIZE] = {0};
 volatile bool uart_ack_geldi = false;
 uint16_t ref_adim_sayisi=0;
-#define DATA_TIMEOUT 75
+#define DATA_TIMEOUT 100
+#define STEP_SYNC_WINDOW        100     // adım
+#define STEP_SYNC_DEADBAND      5
+#define STEP_SYNC_MAX_GAIN      0.01f  // duty %20 max değişsin
+constexpr float adim_derece_carpani = 5.294859f;
+
 /*//motor sürüşünde tepki katsayısından biri bu değerler önemli.motorun hızlanma ve yavaşlama süresini engelle karşı tepki süresini değiştirir.*/
 double duty_Kp = 0.0001;
 double sure_Kp = 0.5;
@@ -22,6 +27,7 @@ double sure_global = 0;
 double sure_integral = 0;
 double sure;
 int rpmTespit = 0;
+uint16_t iki_kapi_aci_farki=0;
 #define ac_button_ofset 0
 #define kapi_ac 0
 #define kapi_kapa 1
@@ -29,7 +35,7 @@ int kapi_acma_derecesi = 150;
 #define tur_sayisi 24
 #define kapat_hareketi_ofset 5
 #define max_duty 1500
-#define min_duty 100
+#define min_duty 50
 #define hiz_katsayisi 10 // mobil uygulamadan gelen hız bu katsayı ile çarpılıp rpm e dönüştürülüyor
 #define bekleme_duty 400
 #define set_voltage 30
