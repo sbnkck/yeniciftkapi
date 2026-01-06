@@ -37,7 +37,7 @@ int kapi_acma_derecesi = 150;
 #define max_duty 1500
 #define min_duty 50
 #define hiz_katsayisi 10 // mobil uygulamadan gelen hız bu katsayı ile çarpılıp rpm e dönüştürülüyor
-#define bekleme_duty 400
+#define bekleme_duty 200
 #define set_voltage 30
 #define set_volatage_factor 150 // voltaj değişimin duty e etkileceğei oranın katsayısı
 #define hesaplanan_min_duty 100

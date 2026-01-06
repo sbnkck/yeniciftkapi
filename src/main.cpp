@@ -1636,18 +1636,20 @@ void kapi_ac_fonksiyonu()
             tanima_hizi_flag = true;
             kapanma_error_flag = false;
             hesaplanan = bekleme_duty;
+            duty = bekleme_duty;
             motor_surme(bekleme_duty);
             PrintLog("acilirken+time+out+a+gitti");
             // vTaskDelay(1000 / portTICK_RATE_MS);
             kapi_basarisiz_ac_sayac++;
             kapi_ac_sayac--;
-            // actan_kapata = true;
+            //actan_kapata = true;
             door_tx_set(client_baski_index, 1);
             uint16_t counter = 0;
-            while ((ref_adim_sayisi > adim_sayisi) && (counter < 200))
-            {
-               vTaskDelay(100 / portTICK_RATE_MS);
+            if (ref_adim_sayisi > adim_sayisi)
                printf("diger kapi bekleniyor\n");
+            while ((ref_adim_sayisi > adim_sayisi) && (counter < 2000))
+            {
+               vTaskDelay(10 / portTICK_RATE_MS);
                counter++;
             }
             door_tx_set(client_baski_index, 0);
@@ -1840,16 +1842,20 @@ void kapi_kapa_fonksiyonu()
       if (actan_kapata == true) // aca giderken kapat verildiyse rpm haritasi güncelleniyor
       {
          actan_kapata = false;
-         int hiz_aktar = 200;
-         int32_t adim_tasi = adim_sayisi - 200;
+         int hiz_aktar = 50;
+         int32_t adim_tasi = adim_sayisi - 100;
          if (adim_tasi < 0)
          {
             adim_tasi = 0;
          }
+         varilacak_hiz = hedefRPMharitasi_kapa[adim_tasi];
+         int count = 0;
          for (uint16_t i = adim_sayisi; i > adim_tasi; i--)
          {
-            varilacak_hiz = hedefRPMharitasi_kapa[adim_tasi];
-            hiz_aktar = hiz_aktar + (varilacak_hiz - 200) / (200);
+            count++;
+            hiz_aktar = hiz_aktar + count + (varilacak_hiz - 100) / (100);
+            if (hiz_aktar > varilacak_hiz)
+               hiz_aktar = varilacak_hiz;
             hedefRPMharitasi_kapa[i] = hiz_aktar;
          }
          Serial.println("kapanma rpm haritasi guncellendi..");
@@ -2530,10 +2536,10 @@ void kapi_kapat_hazirlik()
    }
 
    const float base_rpm = 100.0;         // kalkış momenti için taban RPM
-   const float max_rpm = kapama_max_rpm; // kapama maksimum hızı
+   const float max_rpm = kapama_max_rpm/(maksimum_kapi_boyu/adim_sayisi); // kapama maksimum hızı
    const float ramp_up_ratio = 0.50;     // hızlı kalkış
    const float ramp_down_ratio = 0.30;   // uzun yavaşlama
-   const int total_steps = maksimum_kapi_boyu;
+   const int total_steps = adim_sayisi;
 
    for (int i = 0; i < total_steps; i++)
    {
@@ -4568,8 +4574,8 @@ static void seri_yazdir(void *arg)
       vTaskDelay(50 / portTICK_RATE_MS);
       // xSemaphoreTake(UartMutex,portMAX_DELAY);
       // Serial.println("-----------------------------");
-      printf("sure : %.2f rpm : %d bobin_fark_sure : %.2f ref_adim_sayisi : %d adim_sayisi : %d hesaplanan :%d duty :%.2f hata : %.2f sure_integral : %2.f hedefRPMharitasi : %d \n",
-             sure_global, rpm, bobin_fark_sure, ref_adim_sayisi, adim_sayisi, hesaplanan, duty, hata, sure_integral, hedefRPMharitasi[adim_sayisi]);
+      printf("sure : %.2f rpm : %d bobin_fark_sure : %.2f ref_adim_sayisi : %d adim_sayisi : %d hesaplanan :%d duty :%.2f hata : %.2f sure_integral : %2.f hedefRPMharitasi_kapa : %d \n",
+             sure_global, rpm, bobin_fark_sure, ref_adim_sayisi, adim_sayisi, hesaplanan, duty, hata, sure_integral, hedefRPMharitasi_kapa[adim_sayisi]);
    }
 }
 
