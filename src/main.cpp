@@ -1642,7 +1642,7 @@ void kapi_ac_fonksiyonu()
             // vTaskDelay(1000 / portTICK_RATE_MS);
             kapi_basarisiz_ac_sayac++;
             kapi_ac_sayac--;
-            //actan_kapata = true;
+            // actan_kapata = true;
             door_tx_set(client_baski_index, 1);
             uint16_t counter = 0;
             if (ref_adim_sayisi > adim_sayisi)
@@ -1730,6 +1730,7 @@ void kapi_ac_fonksiyonu()
                   break;
                }
             }
+            door_tx_set(client_kapa_index, 1);
          }
          else
          {
@@ -2307,211 +2308,138 @@ void kapi_ac_hazirlik()
 
 void rpm_haritasi_olustur_engelli_kapat()
 {
-   if (kapi_rutbesi == MASTER)
-   {
-      kapama_max_rpm = EEPROM.read(16);
-      kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
-   }
+ // ============================
+ // 1) Kapama max RPM ayarı
+ // ============================
+ if (kapi_rutbesi == MASTER)
+ {
+  kapama_max_rpm = EEPROM.read(16);
+  kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
+ }
 
-   kapi_acma_derecesi = int(float(adim_sayisi) * 0.0821); // 10000.0; //kapama anında hangi adımda ise o adıma göre rpm harştası oluştursun diye
-   Serial.print("kapi_acma_derecesi engelli: ");
-   Serial.println(kapi_acma_derecesi);
-   // if (adim_sayisi < 300)
-   // {
-   //  kapama_max_rpm = 300;
-   // }
+ // ============================
+ // 2) Açıklığa göre max RPM kırp
+ // ============================
+ kapi_acma_derecesi = int(float(adim_sayisi) * adim_derece_carpani);
 
-   // kapama_max_rpm = kapama_max_rpm - (maksimum_kapi_boyu - adim_sayisi) / 3;
-   // kapama_max_rpm = map(adim_sayisi, 0, maksimum_kapi_boyu, 300, kapama_max_rpm);
+ if (kapi_acma_derecesi <= 30 && kapama_max_rpm > 300)
+  kapama_max_rpm = 300;
+ else if (kapi_acma_derecesi <= 60 && kapama_max_rpm > 600)
+  kapama_max_rpm = 600;
+ else if (kapi_acma_derecesi < 90 && kapama_max_rpm > 1000)
+  kapama_max_rpm = 1000;
 
-   if (kapi_acma_derecesi <= 30 && kapama_max_rpm > 300) // küçük açılarda sıçraama olmasın diye 90 dereceyi belirledik
-   {
-      kapama_max_rpm = 300;
-   }
-   if (kapi_acma_derecesi > 30 && kapi_acma_derecesi <= 60 && kapama_max_rpm > 600) // küçük açılarda sıçraama olmasın diye 90 dereceyi belirledik
-   {
-      kapama_max_rpm = 600;
-   }
-   if (kapi_acma_derecesi > 60 && kapi_acma_derecesi < 90 && kapama_max_rpm > 1000) // küçük açılarda sıçraama olmasın diye 90 dereceyi belirledik
-   {
-      kapama_max_rpm = 1000;
-   }
-   maksimum_kapi_boyu = kapi_acma_derecesi / (82.1 / 1000.0) / 2.2;
+ // ============================
+ // 3) Harita sınırları
+ // ============================
+ const int MAP_MAX =
+     (int)(sizeof(hedefRPMharitasi_kapa) / sizeof(hedefRPMharitasi_kapa[0])) - 1;
 
-   // hizlanma_boy_baslangici = 200; //kiliten kurtulma noktası
+ int total_steps = (int)adim_sayisi + 200;
+ if (total_steps < 1) total_steps = 1;
+ if (total_steps > MAP_MAX) total_steps = MAP_MAX;
 
-   // hizlanma_boy_bitisi = ((adim_sayisi - 200)  / 3) + 200;
+ // ============================
+ // 4) RPM profil parametreleri
+ // ============================
+ const float start_rpm =
+     (float)kapama_baslangic_RPM * 0.65f;   // 🔹 başlangıç yumuşatma
+ const float end_rpm   = (float)kapama_sonu_RPM;
+ float max_rpm         = (float)kapama_max_rpm * 0.90f; // 🔹 engelli modda biraz kırp
 
-   // yavaslama_boy_baslangici = ((adim_sayisi)*5 / 8); //hizlanma_boy_bitisi+ ((maksimum_kapi_boyu-adim_sayisi) / 6);
-   // yavaslama_boy_bitisi = adim_sayisi - 150;
-   /**
-    *              hizlanma              yavaslama
-    *              boy bitisi            boy bas.
-    *               |                        |
-    *               /------------------------\
-    *              /                          \
-    *             /                            \
-    *            /                              \
-    *kapali-----/                                \-----------acik
-    *  0        |                                 |
-    *          hizlanma                          yavaslama
-    *          boy baş.                          boy bitis
-    *
-    *
-    *
-    * */
+ if (max_rpm < start_rpm) max_rpm = start_rpm;
+ if (max_rpm < end_rpm)   max_rpm = end_rpm;
 
-   Serial.print(" kapama_max_rpm : ");
-   Serial.println(kapama_max_rpm);
+ const float ramp_up_ratio   = 0.55f; // 🔹 geç hızlan
+ const float ramp_down_ratio = 0.35f;
 
-   printf("baski_adimi : %.1f \n", baski_adimi);
+ // ============================
+ // 5) Engel bilgisi
+ // ============================
+ const int center = (int)baski_adimi;
 
-   if (baski_adimi < (adim_sayisi - rampa_yok_cm)) // rampa_yok_cm den kısa alanda baskı yediyse harita oluşturmayacak
-   {
-      hizlanma_boy_baslangici = baski_adimi + 100; // baskıya ne kadar kala yavaşlayacak
-      hizlanma_boy_bitisi = baski_adimi + (((adim_sayisi - baski_adimi)) / 3);
+ // Engel çok yakınsa düz profil
+ if (center < (rampa_yok_cm + 20))
+ {
+  for (int i = 0; i <= total_steps; i++)
+   hedefRPMharitasi_kapa[i] = (i == 0) ? 0 : (uint16_t)kapama_baslangic_RPM;
 
-      yavaslama_boy_baslangici = baski_adimi + ((adim_sayisi - baski_adimi) * 5 / 8); // hizlanma_boy_bitisi+ ((maksimum_kapi_boyu-adim_sayisi) / 6);
-      yavaslama_boy_bitisi = adim_sayisi - 150;
+  Serial.println("rpm_haritasi_olustur_engelli (engel cok yakin)");
+  return;
+ }
 
-      // kapama_max_rpm = map(adim_sayisi, baski_adimi, maksimum_kapi_boyu, 300, kapama_max_rpm);
-      kapama_max_rpm *= (((maksimum_kapi_boyu - baski_adimi) * 1.25) / maksimum_kapi_boyu);
-      if (kapama_max_rpm < 300)
-      {
-         kapama_max_rpm = 300;
-      }
-      for (int i = (adim_sayisi + 200); i >= (baski_adimi); i--)
-      {
-         if (i > yavaslama_boy_bitisi)
-         {
-            hedefRPMharitasi_kapa[i] = kapama_baslangic_RPM;
+ // ============================
+ // 6) Engel yavaşlatma penceresi (ASİMETRİK)
+ // ============================
+ int slow_before = (int)(100 * 2.5f); // 🔴 engel öncesi geniş
+ int slow_after  = (int)(50 * 1.2f); // 🟡 engel sonrası dar
 
-            //  Serial.print(i); Serial.print("AA"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i <= yavaslama_boy_bitisi and i > yavaslama_boy_baslangici)
-         {
-            hedefRPMharitasi_kapa[i] = map(i, yavaslama_boy_bitisi, yavaslama_boy_baslangici, kapama_baslangic_RPM, kapama_max_rpm);
+ if (slow_before > center - 20)
+  slow_before = center - 20;
 
-            // Serial.print(i); Serial.print("A"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i <= yavaslama_boy_baslangici and i >= hizlanma_boy_bitisi)
-         {
-            hedefRPMharitasi_kapa[i] = kapama_max_rpm;
+ const float slow_min_rpm =
+     fmaxf(150.0f, fminf(start_rpm, end_rpm));
 
-            //  Serial.print(i); Serial.print("B"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i < hizlanma_boy_bitisi and i >= hizlanma_boy_baslangici)
-         {
-            hedefRPMharitasi_kapa[i] = map(i, hizlanma_boy_bitisi, hizlanma_boy_baslangici, kapama_max_rpm, kapama_sonu_RPM);
+ // ============================
+ // 7) Yumuşak S-eğrisi
+ // ============================
+ auto smooth_cos = [](float t) -> float
+ {
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
+  return 0.5f - 0.5f * cosf((float)M_PI * t);
+ };
 
-            //  Serial.print(i); Serial.print("C"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i < hizlanma_boy_baslangici and i > 0)
-         {
-            hedefRPMharitasi_kapa[i] = kapama_sonu_RPM;
+ // ============================
+ // 8) Harita oluşturma
+ // ============================
+ for (int i = 0; i <= total_steps; i++)
+ {
+  float progress = 1.0f - ((float)i / (float)total_steps);
+  float rpm_target;
 
-            //  Serial.print(i); Serial.print("D"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i <= 0)
-         {
-            hedefRPMharitasi_kapa[i] = 0;
+  // ---- Baz kapama profili ----
+  if (progress < ramp_up_ratio)
+  {
+   float t = progress / ramp_up_ratio;
+   rpm_target = start_rpm + (max_rpm - start_rpm) * smooth_cos(t);
+  }
+  else if (progress < (1.0f - ramp_down_ratio))
+  {
+   rpm_target = max_rpm;
+  }
+  else
+  {
+   float t = (progress - (1.0f - ramp_down_ratio)) / ramp_down_ratio;
+   rpm_target = max_rpm - (max_rpm - end_rpm) * smooth_cos(t);
+  }
 
-            //  Serial.print(i); Serial.print("E"); Serial.println(hedefRPMharitasi[i]);
-         }
-      }
-   }
-   else
-   {
-      for (volatile uint16_t i = baski_adimi; i < (adim_sayisi + 200); i++)
-      {
-         hedefRPMharitasi_kapa[i] = kapama_baslangic_RPM;
-         // printf("i : %d , hedefRPMharitasi : %d \n", i, hedefRPMharitasi[i]);
-      }
-   }
-   /**
-    *
-    *
-    * baskı adımına kadar olan rpm ayarlandı sonrası ayarlanıyor
-    *
-    *
-    *
-    */
-   hizlanma_boy_baslangici = 200; // kiliten kurtulma noktası
-   if (baski_adimi > (rampa_yok_cm + hizlanma_boy_baslangici))
-   {
+  // ---- Engel ÖNCESİ: erken yavaşla ----
+  if (i <= center && i >= (center - slow_before))
+  {
+   float x = (float)(center - i) / (float)slow_before; // 0 engel, 1 pencere başı
+   if (x < 0) x = 0;
+   if (x > 1) x = 1;
 
-      hizlanma_boy_bitisi = (((baski_adimi)-200) / 3) + 200;
+   rpm_target = slow_min_rpm + (rpm_target - slow_min_rpm) * (x * x);
+  }
+  // ---- Engel SONRASI: geç hızlan ----
+  else if (i > center && i <= (center + slow_after))
+  {
+   float x = (float)(i - center) / (float)slow_after; // 0 engel, 1 pencere sonu
+   if (x < 0) x = 0;
+   if (x > 1) x = 1;
 
-      yavaslama_boy_baslangici = ((baski_adimi)-150);
-      yavaslama_boy_bitisi = baski_adimi - 100; // baskıdan ne kadar osnra hızlanacak
-      if (kapi_rutbesi == MASTER)
-      {
-         kapama_max_rpm = EEPROM.read(16);
-         kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
-      }
-      // kapama_max_rpm = map(baski_adimi, 0, maksimum_kapi_boyu, 300, kapama_max_rpm);
-      kapama_max_rpm *= ((baski_adimi * 1.25) / maksimum_kapi_boyu);
-      if (kapama_max_rpm < 300)
-      {
-         kapama_max_rpm = 300;
-      }
-      for (int i = baski_adimi; i >= 0; i--)
-      {
-         if (i > yavaslama_boy_bitisi)
-         {
-            hedefRPMharitasi_kapa[i] = kapama_baslangic_RPM;
+   rpm_target = slow_min_rpm + (rpm_target - slow_min_rpm) * (x * x);
+  }
 
-            //  Serial.print(i); Serial.print("AA"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i <= yavaslama_boy_bitisi and i > yavaslama_boy_baslangici)
-         {
-            hedefRPMharitasi_kapa[i] = map(i, yavaslama_boy_bitisi, yavaslama_boy_baslangici, kapama_baslangic_RPM, kapama_max_rpm);
+  hedefRPMharitasi_kapa[i] = (i == 0) ? 0 : (uint16_t)rpm_target;
+ }
 
-            // Serial.print(i); Serial.print("A"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i <= yavaslama_boy_baslangici and i >= hizlanma_boy_bitisi)
-         {
-            hedefRPMharitasi_kapa[i] = kapama_max_rpm;
-
-            //  Serial.print(i); Serial.print("B"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i < hizlanma_boy_bitisi and i >= hizlanma_boy_baslangici)
-         {
-            hedefRPMharitasi_kapa[i] = map(i, hizlanma_boy_bitisi, hizlanma_boy_baslangici, kapama_max_rpm, kapama_sonu_RPM);
-
-            //  Serial.print(i); Serial.print("C"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i < hizlanma_boy_baslangici and i > 0)
-         {
-            hedefRPMharitasi_kapa[i] = kapama_sonu_RPM;
-
-            //  Serial.print(i); Serial.print("D"); Serial.println(hedefRPMharitasi[i]);
-         }
-         if (i <= 0)
-         {
-            hedefRPMharitasi_kapa[i] = 0;
-
-            //  Serial.print(i); Serial.print("E"); Serial.println(hedefRPMharitasi[i]);
-         }
-      }
-   }
-   else
-   {
-      for (volatile uint16_t i = 0; i < baski_adimi; i++)
-      {
-         hedefRPMharitasi_kapa[i] = kapama_baslangic_RPM;
-         // printf("i : %d , hedefRPMharitasi : %d \n", i, hedefRPMharitasi[i]);
-      }
-   }
-
-   // for (uint16_t i = 0; i <= 2000; i++)
-   // {
-   //  printf("hedefRPMharitasi_kapa : %d : %d  \n ", i, hedefRPMharitasi_kapa[i]);
-   //  vTaskDelay(1 / portTICK_RATE_MS);
-   // }
-
-   Serial.println("rpm_haritasi_olustur_engelli...");
+ Serial.println("rpm_haritasi_olustur_engelli_kapat (asimetrik) OK");
 }
+
+
 void kapi_kapat_hazirlik()
 {
    bobin_fark_sure = 0;
@@ -2535,10 +2463,10 @@ void kapi_kapat_hazirlik()
       }
    }
 
-   const float base_rpm = 100.0;         // kalkış momenti için taban RPM
-   const float max_rpm = kapama_max_rpm/(maksimum_kapi_boyu/adim_sayisi); // kapama maksimum hızı
-   const float ramp_up_ratio = 0.50;     // hızlı kalkış
-   const float ramp_down_ratio = 0.30;   // uzun yavaşlama
+   const float base_rpm = 100.0;                                              // kalkış momenti için taban RPM
+   const float max_rpm = kapama_max_rpm / (maksimum_kapi_boyu / adim_sayisi); // kapama maksimum hızı
+   const float ramp_up_ratio = 0.50;                                          // hızlı kalkış
+   const float ramp_down_ratio = 0.30;                                        // uzun yavaşlama
    const int total_steps = adim_sayisi;
 
    for (int i = 0; i < total_steps; i++)
