@@ -66,6 +66,7 @@ uint16_t baski_duty = 0;
 #define client_max_rpm_index 16
 #define client_adim_sayisi_MSB_index 17
 #define client_adim_sayisi_LSB_index 18
+#define client_kapanirken_baski_index 19
 #define client_kapama_max_rpm_index 3
 #define client_mentese_index 4
 #define client_acil_stop_index 5
@@ -123,6 +124,7 @@ bool bluetooth_kapi_kapa = false;
 //  int rpm_tutucu[1800];
 //  int bobin_fark_tutucu[1800];
 bool kapanirken_engel_algiladi_flag = false; // kapanırken engel algılandığında aktif edilecek tekrar kapanırken engelli bir rpm haritası oluşturulacak
+bool kapanirken_engel_var = false;
 int counter_adim = 0;
 #define rampa_yok_cm 100                               // rampa_yok_cm den kısa alanda baskı yediyse harita oluşturmayacak
 double baski_adimi = 0;                                // hangi adımda baski yedi ise o daımı bu değişkende tutacağiz

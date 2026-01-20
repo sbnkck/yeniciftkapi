@@ -1966,6 +1966,8 @@ void kapi_kapa_fonksiyonu()
                   Serial.println("===========Kapi kapanma noktasi guncellendi==============");
                   fault_siniri = 0; // fault ledi kesmesi sistemi durdurma sayacı sıfırlandı
                   baski_duty = kapanma_baski_gucu_min;
+                  kapanirken_engel_algiladi_flag = false;
+                  kapanirken_engel_var = false;
                   memset(bobin_ortalama, 0, 6); // başlangıçta ortalama değerleri tutan dizi sıfırlandı.
                   adim_sayisi = 0;
                   duty = bekleme_duty;
@@ -2047,6 +2049,7 @@ void kapi_kapa_fonksiyonu()
                   bluetooth_kapi_ac = true;
                   engel_algilandi_flag = true;
                   kapanirken_engel_algiladi_flag = true;
+                  kapanirken_engel_var = true;
                   baski_adimi = adim_sayisi;
                   /*************************************/
                   Max_RPM = tanima_hizi;
@@ -2308,137 +2311,64 @@ void kapi_ac_hazirlik()
 
 void rpm_haritasi_olustur_engelli_kapat()
 {
- // ============================
- // 1) Kapama max RPM ayarı
- // ============================
- if (kapi_rutbesi == MASTER)
- {
-  kapama_max_rpm = EEPROM.read(16);
-  kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
- }
+   bobin_fark_sure = 0;
+   sure = 0;
+   if (kapi_rutbesi == MASTER)
+   {
+      kapi_acma_derecesi = EEPROM.read(20);
+      kapi_acma_derecesi = kapi_acma_derecesi * 2;
+      maksimum_kapi_boyu = (double)(kapi_acma_derecesi * adim_derece_carpani);
+      kapama_max_rpm = EEPROM.read(16);
+      kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
+   }
+   else
+   {
+      uint8_t rx_local[SERIAL_SIZE];
+      if (door_rx_peek(rx_local))
+      {
+         kapama_max_rpm = double(rx_local[client_kapama_max_rpm_index]) * hiz_katsayisi;
+         kapi_acma_derecesi = double(rx_local[client_derece_index]) * 2;
+         maksimum_kapi_boyu = ((kapi_acma_derecesi)*adim_derece_carpani);
+      }
+   }
+   if (kapama_max_rpm > tanima_hizi)
+      kapama_max_rpm = tanima_hizi;
+   const float base_rpm = 100.0;                                              // kalkış momenti için taban RPM
+   const float max_rpm = kapama_max_rpm / (maksimum_kapi_boyu / adim_sayisi); // kapama maksimum hızı
+   const float ramp_up_ratio = 0.50;                                          // hızlı kalkış
+   const float ramp_down_ratio = 0.30;                                        // uzun yavaşlama
+   const int total_steps = adim_sayisi;
 
- // ============================
- // 2) Açıklığa göre max RPM kırp
- // ============================
- kapi_acma_derecesi = int(float(adim_sayisi) * adim_derece_carpani);
+   for (int i = 0; i < total_steps; i++)
+   {
+      float pos = (float)i / total_steps;
+      float rpm;
 
- if (kapi_acma_derecesi <= 30 && kapama_max_rpm > 300)
-  kapama_max_rpm = 300;
- else if (kapi_acma_derecesi <= 60 && kapama_max_rpm > 600)
-  kapama_max_rpm = 600;
- else if (kapi_acma_derecesi < 90 && kapama_max_rpm > 1000)
-  kapama_max_rpm = 1000;
+      if (pos < ramp_up_ratio)
+      {
+         // Hızlı parabolik kalkış
+         float t = pos / ramp_up_ratio;
+         rpm = base_rpm + (max_rpm - base_rpm) * (t * t);
+      }
+      else if (pos < (1.0 - ramp_down_ratio))
+      {
+         rpm = max_rpm;
+      }
+      else
+      {
+         // Baskı bölgesi: çok yumuşak azalma
+         float t = (1.0 - pos) / ramp_down_ratio;
+         rpm = base_rpm + (max_rpm - base_rpm) * (0.5 - 0.5 * cos(M_PI * t));
+      }
 
- // ============================
- // 3) Harita sınırları
- // ============================
- const int MAP_MAX =
-     (int)(sizeof(hedefRPMharitasi_kapa) / sizeof(hedefRPMharitasi_kapa[0])) - 1;
-
- int total_steps = (int)adim_sayisi + 200;
- if (total_steps < 1) total_steps = 1;
- if (total_steps > MAP_MAX) total_steps = MAP_MAX;
-
- // ============================
- // 4) RPM profil parametreleri
- // ============================
- const float start_rpm =
-     (float)kapama_baslangic_RPM * 0.65f;   // 🔹 başlangıç yumuşatma
- const float end_rpm   = (float)kapama_sonu_RPM;
- float max_rpm         = (float)kapama_max_rpm * 0.90f; // 🔹 engelli modda biraz kırp
-
- if (max_rpm < start_rpm) max_rpm = start_rpm;
- if (max_rpm < end_rpm)   max_rpm = end_rpm;
-
- const float ramp_up_ratio   = 0.55f; // 🔹 geç hızlan
- const float ramp_down_ratio = 0.35f;
-
- // ============================
- // 5) Engel bilgisi
- // ============================
- const int center = (int)baski_adimi;
-
- // Engel çok yakınsa düz profil
- if (center < (rampa_yok_cm + 20))
- {
-  for (int i = 0; i <= total_steps; i++)
-   hedefRPMharitasi_kapa[i] = (i == 0) ? 0 : (uint16_t)kapama_baslangic_RPM;
-
-  Serial.println("rpm_haritasi_olustur_engelli (engel cok yakin)");
-  return;
- }
-
- // ============================
- // 6) Engel yavaşlatma penceresi (ASİMETRİK)
- // ============================
- int slow_before = (int)(100 * 2.5f); // 🔴 engel öncesi geniş
- int slow_after  = (int)(50 * 1.2f); // 🟡 engel sonrası dar
-
- if (slow_before > center - 20)
-  slow_before = center - 20;
-
- const float slow_min_rpm =
-     fmaxf(150.0f, fminf(start_rpm, end_rpm));
-
- // ============================
- // 7) Yumuşak S-eğrisi
- // ============================
- auto smooth_cos = [](float t) -> float
- {
-  if (t < 0.0f) t = 0.0f;
-  if (t > 1.0f) t = 1.0f;
-  return 0.5f - 0.5f * cosf((float)M_PI * t);
- };
-
- // ============================
- // 8) Harita oluşturma
- // ============================
- for (int i = 0; i <= total_steps; i++)
- {
-  float progress = 1.0f - ((float)i / (float)total_steps);
-  float rpm_target;
-
-  // ---- Baz kapama profili ----
-  if (progress < ramp_up_ratio)
-  {
-   float t = progress / ramp_up_ratio;
-   rpm_target = start_rpm + (max_rpm - start_rpm) * smooth_cos(t);
-  }
-  else if (progress < (1.0f - ramp_down_ratio))
-  {
-   rpm_target = max_rpm;
-  }
-  else
-  {
-   float t = (progress - (1.0f - ramp_down_ratio)) / ramp_down_ratio;
-   rpm_target = max_rpm - (max_rpm - end_rpm) * smooth_cos(t);
-  }
-
-  // ---- Engel ÖNCESİ: erken yavaşla ----
-  if (i <= center && i >= (center - slow_before))
-  {
-   float x = (float)(center - i) / (float)slow_before; // 0 engel, 1 pencere başı
-   if (x < 0) x = 0;
-   if (x > 1) x = 1;
-
-   rpm_target = slow_min_rpm + (rpm_target - slow_min_rpm) * (x * x);
-  }
-  // ---- Engel SONRASI: geç hızlan ----
-  else if (i > center && i <= (center + slow_after))
-  {
-   float x = (float)(i - center) / (float)slow_after; // 0 engel, 1 pencere sonu
-   if (x < 0) x = 0;
-   if (x > 1) x = 1;
-
-   rpm_target = slow_min_rpm + (rpm_target - slow_min_rpm) * (x * x);
-  }
-
-  hedefRPMharitasi_kapa[i] = (i == 0) ? 0 : (uint16_t)rpm_target;
- }
-
- Serial.println("rpm_haritasi_olustur_engelli_kapat (asimetrik) OK");
+      hedefRPMharitasi_kapa[i] = (uint16_t)rpm;
+   }
+   //       for (uint16_t i = 0; i <= 2000; i++)
+   //  {
+   //   printf("hedefRPMharitasi_kapa : %d : %d  \n ", i, hedefRPMharitasi_kapa[i]);
+   // vTaskDelay(1 / portTICK_RATE_MS);
+   // }
 }
-
 
 void kapi_kapat_hazirlik()
 {
@@ -6273,6 +6203,8 @@ void handle_data_frame(uint8_t *payload, int len)
    ref_adim_sayisi =
        (rx_local[client_adim_sayisi_MSB_index] << 8) |
        rx_local[client_adim_sayisi_LSB_index];
+   if (rx_local[client_kapanirken_baski_index] == true)
+      kapanirken_engel_algiladi_flag = rx_local[client_kapanirken_baski_index];
 }
 
 void send_ack_with_status(void)
@@ -6348,9 +6280,10 @@ void master_send_task(void *arg)
       tx_data[client_kuvvet_siniri_index] = EEPROM.read(21);
       tx_data[client_push_run_index] = push_run_flag;
       tx_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
-      tx_data[client_derece_index] = kapi_acma_derecesi / 2;             //*
-      tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF; //*
-      tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;        //*
+      tx_data[client_derece_index] = kapi_acma_derecesi / 2;                   //*
+      tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF;       //*
+      tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;              //*
+      tx_data[client_kapanirken_baski_index] = kapanirken_engel_algiladi_flag; //*
 
       memcpy(&tx[3], tx_data, SERIAL_SIZE);
 
