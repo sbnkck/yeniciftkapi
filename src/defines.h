@@ -14,8 +14,8 @@ uint8_t rx_data[SERIAL_SIZE] = {0};
 volatile bool uart_ack_geldi = false;
 uint16_t ref_adim_sayisi = 0;
 #define DATA_TIMEOUT 100
-#define STEP_SYNC_WINDOW 100 // adım
-#define STEP_SYNC_DEADBAND 5
+#define STEP_SYNC_WINDOW 40 // adım
+#define STEP_SYNC_DEADBAND 10
 #define STEP_SYNC_MAX_GAIN 0.01f // duty %20 max değişsin
 constexpr float adim_derece_carpani = 5.294859f;
 
@@ -44,9 +44,9 @@ int kapi_acma_derecesi = 150;
 #define hesaplanan_max_duty 200
 #define kapanma_guncelleme_noktasi 100
 #define akim_hesaplanan_siniri 400
-#define acma_siniri 200
+#define acma_siniri 50
 #define motor_i_t_max_duty 2000 // motor ilk tahrikte akımı sınırlamak için
-#define kapama_baski_gucu_ks 20
+#define kapama_baski_gucu_ks 50
 #define kapanma_baski_gucu_min 25
 uint16_t baski_duty = 0;
 #define aciliyor 0

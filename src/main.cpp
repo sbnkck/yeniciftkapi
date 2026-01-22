@@ -417,17 +417,34 @@ static inline float step_sync_duty_factor(int16_t master_step,
                                           int16_t slave_step)
 {
    int16_t diff;
+
    if (hareket_sinyali == kapi_ac_sinyali)
    {
       diff = master_step - slave_step;
+      if (kapi_rutbesi == MASTER)
+      {
+         diff = diff + iki_kapi_aci_farki * adim_derece_carpani;
+      }
+      else
+      {
+         diff = diff - iki_kapi_aci_farki * adim_derece_carpani;
+      }
    }
    else
    {
       diff = -(master_step - slave_step);
+      if (kapi_rutbesi == MASTER)
+      {
+         diff = diff + iki_kapi_aci_farki * adim_derece_carpani;
+      }
+      else
+      {
+         diff = diff - iki_kapi_aci_farki * adim_derece_carpani;
+      }
    }
 
    // Senkron kopmuş → karışma
-   if (abs(diff) > STEP_SYNC_WINDOW)
+   if (abs(diff) > 200)
       return 1.0f;
 
    // Deadband
@@ -438,10 +455,10 @@ static inline float step_sync_duty_factor(int16_t master_step,
    float factor = 1.0f + (norm * STEP_SYNC_MAX_GAIN);
 
    // Güvenlik
-   if (factor > 1.2f)
-      factor = 1.2f;
-   if (factor < 0.8f)
-      factor = 0.8f;
+   if (factor > 1.5f)
+      factor = 1.5f;
+   if (factor < 0.1f)
+      factor = 0.1f;
 
    return factor;
 }
@@ -1719,7 +1736,7 @@ void kapi_ac_fonksiyonu()
                }
                else
                {
-                  while (ref_adim_sayisi > (maksimum_kapi_boyu - (iki_kapi_aci_farki * adim_derece_carpani)))
+                  while (ref_adim_sayisi > (maksimum_kapi_boyu - (iki_kapi_aci_farki * adim_derece_carpani) + 10))
                   {
                      door_tx_set(client_kapa_index, 1);
                      Serial.println("Slave kapa komutu gonderildi.3");
@@ -1739,7 +1756,7 @@ void kapi_ac_fonksiyonu()
             while (adim_sayisi >= (maksimum_kapi_boyu - 10) && (rx_local[client_kapa_index] == 0))
             {
                zaman_timeout++;
-               if (zaman_timeout <= (acik_kalma_suresi + (500 * (!client_baski_flag)))) // master baski yediyse süreyi kendi tutar. yoksa mastere 5 sn bekler
+               if (zaman_timeout <= (acik_kalma_suresi + (2000 * (!client_baski_flag) * (!kapanirken_engel_algiladi_flag)))) // master baski yediyse süreyi kendi tutar. yoksa mastere 5 sn bekler
                {
                   vTaskDelay(10 / portTICK_RATE_MS);
                   if (digitalRead(ac_pini) == 1 || digitalRead(asansor_ac_pini) == 1)
@@ -2537,8 +2554,16 @@ static void ac_task(void *arg)
                PrintLog("ac+hareketi+yontem+1+2");
                if (kapi_rutbesi == MASTER)
                {
+                  int timeout = 0;
+                  while (((ref_adim_sayisi) < ((iki_kapi_aci_farki * adim_derece_carpani))) && timeout < 50)
+                  {
+                     door_tx_set(client_ac_index, 1);
+                     timeout++;
+
+                     vTaskDelay(DATA_TIMEOUT / portTICK_RATE_MS);
+                     Serial.println("Slave acmasi bekleniyor");
+                  }
                   door_tx_set(client_ac_index, 1);
-                  vTaskDelay(DATA_TIMEOUT / portTICK_RATE_MS);
                   Serial.println("Slave ac komutu gonderildi.5");
                }
                kapi_ac_hazirlik();
@@ -3378,7 +3403,9 @@ void ble_data_al()
          break;
       case 79:
          mod = ble_alinan_deger;
-         printf("BLE Al Fn: mod = %d \n", mod);
+         kapi_rutbesi = mod;
+         Serial.print("BLE Al Fn: kapi_rutbesi = ");
+         Serial.println(kapi_rutbesi);
          vTaskDelay(100 / portTICK_RATE_MS);
 
          break;
@@ -3459,8 +3486,13 @@ void ble_data_al()
          esp_restart();
 
          break;
-      case 106:
-         kapi_rutbesi = ble_alinan_deger;
+         // case 106:
+         //    kapi_rutbesi = ble_alinan_deger;
+         //    Serial.print("BLE Al Fn: kapi_rutbesi = ");
+         //    Serial.println(kapi_rutbesi);
+         break;
+      case 107:
+         iki_kapi_aci_farki = ble_alinan_deger;
          Serial.print("BLE Al Fn: kapi_rutbesi = ");
          Serial.println(kapi_rutbesi);
          break;
@@ -3557,7 +3589,7 @@ void ble_data_al()
       }
 
       // ble_data_guncelle();
-      if (adres < 100)
+      if (adres < 200)
       {
          if (EEPROM.read(adres) != ble_alinan_deger)
          {
@@ -4099,9 +4131,9 @@ void eeprom_oku_fn()
    else
    {
       if (kapi_rutbesi == MASTER)
-         printf("mod_____________________: MASTER \n");
+         printf("kapi_rutbesi_____________________: MASTER \n");
       if (kapi_rutbesi == SLAVE)
-         printf("mod_____________________: SLAVE \n");
+         printf("kapi_rutbesi_____________________: SLAVE \n");
    }
    int x = EEPROM.read(80);
    if (x > 200)
@@ -4130,6 +4162,21 @@ void eeprom_oku_fn()
    {
       printf("kilit_birakma_noktasi_____________________: %d \n", kilit_birakma_noktasi);
    }
+
+   iki_kapi_aci_farki = EEPROM.read(107);
+   if (iki_kapi_aci_farki > 200)
+   {
+      iki_kapi_aci_farki = 0; //  Varsayılan Değer  250 adim
+      EEPROM.write(107, kilit_birakma_noktasi);
+      kilit_birakma_noktasi = EEPROM.read(107);
+      printf("iki_kapi_aci_farki_vrsyln______________: %d \n", kilit_birakma_noktasi);
+   }
+   else
+   {
+      printf("iki_kapi_aci_farki_____________________: %d \n", kilit_birakma_noktasi);
+   }
+iki_kapi_aci_farki = 0; 
+printf("iki_kapi_aci_farki deneme_____________________: %d \n", kilit_birakma_noktasi);
 
    acil_stop_sayici = EEPROM.read(82) + EEPROM.read(83) * 256;
    printf("acil_stop_sayici_____________: %d \n", acil_stop_sayici);
