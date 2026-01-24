@@ -8,7 +8,7 @@ bool motor_ilk_tahrik_flag = false;
 #define MASTER 1
 #define SLAVE 0
 uint8_t kapi_rutbesi = MASTER;
-#define SERIAL_SIZE 50
+#define SERIAL_SIZE 30
 uint8_t tx_data[SERIAL_SIZE] = {0};
 uint8_t rx_data[SERIAL_SIZE] = {0};
 volatile bool uart_ack_geldi = false;
@@ -46,7 +46,7 @@ int kapi_acma_derecesi = 150;
 #define akim_hesaplanan_siniri 400
 #define acma_siniri 50
 #define motor_i_t_max_duty 2000 // motor ilk tahrikte akımı sınırlamak için
-#define kapama_baski_gucu_ks 50
+#define kapama_baski_gucu_ks 20
 #define kapanma_baski_gucu_min 25
 uint16_t baski_duty = 0;
 #define aciliyor 0

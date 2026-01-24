@@ -1680,6 +1680,16 @@ void kapi_ac_fonksiyonu()
                counter++;
                door_tx_set(client_baski_index, 1);
                client_baski_flag = true;
+
+               s1_state = digitalRead(encodera);
+               s2_state = digitalRead(encoderb);
+               s3_state = digitalRead(encoderc);
+               adim = ((100 * s1_state) + (10 * s2_state) + (s3_state));
+               //  if (baski_duty > kapama_baski_gucu) // uygulamadna baskı gücü azaltırlırsa burada bizde azaltıyoruz ve baskı dutynın uçmasını engelliyoruz.
+               baski_duty = kapama_baski_gucu;
+
+               motor_surme(baski_duty);
+               vTaskDelay(10 / portTICK_RATE_MS);
             }
             door_tx_set(client_baski_index, 0);
             client_baski_flag = false;
@@ -2731,9 +2741,9 @@ void ble_baslat_fn()
       ble_yollanan_dizi_global[i] = 0;
       ble_gelen_dizi_global[i] = 0;
    }
-   char ble_name[30];
+   char ble_name[100];
    sprintf(ble_name, "%s:%s", MACID, proje_no);
-   printf("ble_name-------------------------:%s", ble_name);
+   printf("ble_name-------------------------:%s\n", ble_name);
 
    Serial.println("BLE Baslat Fn: BLE Server Task Basladi");
    BLEDevice::init(ble_name); //  Belirlenen MAC ID ile bluetooth hizmeti başlatıldı.
@@ -3432,7 +3442,14 @@ void ble_data_al()
          kapi_rutbesi = mod;
          Serial.print("BLE Al Fn: kapi_rutbesi = ");
          Serial.println(kapi_rutbesi);
-         vTaskDelay(100 / portTICK_RATE_MS);
+         //   eeproma_yaz_istegi = 1;
+
+         //       while (eeproma_yaz_istegi == 1)
+         //       {
+         //          vTaskDelay(1000 / portTICK_PERIOD_MS);
+         //       }
+
+         //       esp_restart();
 
          break;
       case 80:
@@ -3440,7 +3457,7 @@ void ble_data_al()
          if (demo_modu_flag)
          {
             test_flag = true;
-            xTaskCreate(test_task, "test_task", 2048, NULL, 10, &test_task_arg);
+            xTaskCreate(test_task, "test_task", 2048, NULL, 1, &test_task_arg);
          }
          else
          {
@@ -3498,7 +3515,7 @@ void ble_data_al()
             EEPROM.write(i, 255);
          }
 
-         for (int i = 73; i < 82; i++)
+         for (int i = 73; i < 150; i++)
          {
             EEPROM.write(i, 255);
          }
@@ -3629,7 +3646,7 @@ void ble_data_al()
             ble_data_geldi = true;
          }
 
-         if (adres == 74) // menteşe güncellendiyse
+         if (adres == 74 || adres == 79) // menteşe güncellendiyse
          {
             eeproma_yaz_istegi = 1;
 
@@ -3788,7 +3805,7 @@ void eeprom_oku_fn()
    Max_RPM = EEPROM.read(11); //  EEPROM(11) Okunuyor.
    if (Max_RPM > 200)
    {                //  Açma Hızı
-      Max_RPM = 33; //  Varsayılan Değer = 20
+      Max_RPM = 40; //  Varsayılan Değer = 20
       EEPROM.write(11, Max_RPM);
       Max_RPM = Max_RPM * hiz_katsayisi;
       printf("acma_hizi_vrsyln____________________: %d \n", Max_RPM);
@@ -3817,7 +3834,7 @@ void eeprom_oku_fn()
    tanima_hizi = EEPROM.read(13); //  EEPROM(13) Okunuyor.
    if (tanima_hizi > 200)
    {                     //  Açma Baskı Gücü
-      tanima_hizi = 100; //  Varsayılan Değer = 5
+      tanima_hizi = 150; //  Varsayılan Değer = 5
       EEPROM.write(13, 5);
       printf("tanima_hizi_vrsyln______________: %d \n", tanima_hizi);
    }
@@ -3844,7 +3861,7 @@ void eeprom_oku_fn()
                                           // printf("kapama_baski_suresi_____________: %d \n", kapama_baski_suresi);
    if (kapama_baski_suresi > 200)
    {                            //  Kapatma Hızlanma Rampası
-      kapama_baski_suresi = 20; //  Varsayılan Değer 200 ms olarak ayarlandı
+      kapama_baski_suresi = 50; //  Varsayılan Değer 200 ms olarak ayarlandı
       EEPROM.write(15, kapama_baski_suresi / 2);
       kapama_baski_suresi = EEPROM.read(15) * kapama_baski_suresi_ks * 2;
       printf("kapama_baski_suresi_vrsyln______: %d \n", kapama_baski_suresi);
@@ -3857,7 +3874,7 @@ void eeprom_oku_fn()
    kapama_max_rpm = EEPROM.read(16); //  EEPROM(16) Okunuyor.
    if (kapama_max_rpm > 200)
    {                       //  Kapatma Hızı
-      kapama_max_rpm = 33; //  Varsayılan Değer = 20
+      kapama_max_rpm = 40; //  Varsayılan Değer = 20
       EEPROM.write(16, kapama_max_rpm);
       kapama_max_rpm = kapama_max_rpm * hiz_katsayisi;
       printf("kapama_max_rpm_vrsyln__________________: %d \n", kapama_max_rpm);
@@ -3916,7 +3933,7 @@ void eeprom_oku_fn()
    if (kapi_acma_derecesi > 200)
    {                           //  Kapı Açma Açısı
       kapi_acma_derecesi = 90; //  Varsayılan Değer = 90
-      maksimum_kapi_boyu = (kapi_acma_derecesi / (82.1 / 1000.0)) / 2.5;
+      maksimum_kapi_boyu = (double)(kapi_acma_derecesi * adim_derece_carpani);
       EEPROM.write(20, kapi_acma_derecesi / 2);
       printf("kapi_acma_derecesi_vrsyln______________: %d \n", kapi_acma_derecesi);
    }
@@ -3924,7 +3941,7 @@ void eeprom_oku_fn()
    {
       kapi_acma_derecesi = kapi_acma_derecesi * 2;
 
-      maksimum_kapi_boyu = (double)(kapi_acma_derecesi * (10000.0 / 821.0)) / 2.5;
+      maksimum_kapi_boyu = (double)(kapi_acma_derecesi * adim_derece_carpani);
 
       printf("kapi_acma_derecesi_____________________: %d \n", kapi_acma_derecesi);
    }
@@ -4125,11 +4142,27 @@ void eeprom_oku_fn()
    {
       printf("test_modu_aktif_____________________: %d \n", test_modu_aktif);
    }
+   mod = EEPROM.read(79);
+   kapi_rutbesi = mod;
+   if (mod > 200)
+   {
+      mod = tek_kanat; //  Varsayılan Değer  tek kanat
+      EEPROM.write(79, mod);
+      mod = EEPROM.read(79);
+      printf("kapi_rutbesi_____________________: SLAVE \n");
+   }
+   else
+   {
+      if (kapi_rutbesi == MASTER)
+         printf("kapi_rutbesi_____________________: MASTER \n");
+      if (kapi_rutbesi == SLAVE)
+         printf("kapi_rutbesi_____________________: SLAVE \n");
+   }
    int mentese_buff = EEPROM.read(74);
    // mentese_yonu = EEPROM.read(74);
    if (mentese_buff > 200)
    {
-      mentese_yonu = sag;
+      mentese_yonu = sol;
       EEPROM.write(74, mentese_yonu);
       mentese_yonu = EEPROM.read(74);
    }
@@ -4145,29 +4178,13 @@ void eeprom_oku_fn()
    //  printf("yon jumper ile mentese yonu ayarlandi_: %d \n", mentese_yonu);
    // }
 
-   mod = EEPROM.read(79);
-   kapi_rutbesi = mod;
-   if (mod > 200)
-   {
-      mod = tek_kanat; //  Varsayılan Değer  tek kanat
-      EEPROM.write(79, mod);
-      mod = EEPROM.read(79);
-      printf("mod_vrsyln______________: %d \n", mod);
-   }
-   else
-   {
-      if (kapi_rutbesi == MASTER)
-         printf("kapi_rutbesi_____________________: MASTER \n");
-      if (kapi_rutbesi == SLAVE)
-         printf("kapi_rutbesi_____________________: SLAVE \n");
-   }
    int x = EEPROM.read(80);
    if (x > 200)
    {
       demo_modu_flag = 0; //  Varsayılan Değer  tek kanat
       EEPROM.write(80, demo_modu_flag);
       demo_modu_flag = EEPROM.read(80);
-      printf("mod_vrsyln______________: %d \n", demo_modu_flag);
+      printf("demo mod_vrsyln______________: %d \n", demo_modu_flag);
    }
    else
    {
@@ -4193,16 +4210,15 @@ void eeprom_oku_fn()
    if (iki_kapi_aci_farki > 200)
    {
       iki_kapi_aci_farki = 0; //  Varsayılan Değer  250 adim
-      EEPROM.write(107, kilit_birakma_noktasi);
-      kilit_birakma_noktasi = EEPROM.read(107);
-      printf("iki_kapi_aci_farki_vrsyln______________: %d \n", kilit_birakma_noktasi);
+      EEPROM.write(107, iki_kapi_aci_farki);
+      iki_kapi_aci_farki = EEPROM.read(107);
+      printf("iki_kapi_aci_farki_vrsyln______________: %d \n", iki_kapi_aci_farki);
    }
    else
    {
-      printf("iki_kapi_aci_farki_____________________: %d \n", kilit_birakma_noktasi);
+      printf("iki_kapi_aci_farki_____________________: %d \n", iki_kapi_aci_farki);
    }
-   iki_kapi_aci_farki = 0;
-   printf("iki_kapi_aci_farki deneme_____________________: %d \n", kilit_birakma_noktasi);
+   printf("iki_kapi_aci_farki deneme_____________________: %d \n", iki_kapi_aci_farki);
 
    acil_stop_sayici = EEPROM.read(82) + EEPROM.read(83) * 256;
    printf("acil_stop_sayici_____________: %d \n", acil_stop_sayici);
@@ -4726,7 +4742,7 @@ static void test_task(void *arg)
    {
 
       vTaskDelay(100 / portTICK_RATE_MS);
-      if (test_flag == true && hareket_sinyali != kapi_ac_sinyali && adim_sayisi < 50)
+      if (test_flag == true && hareket_sinyali != kapi_ac_sinyali && adim_sayisi < 10 && kapi_rutbesi == MASTER)
       {
          vTaskDelay(3000 / portTICK_RATE_MS);
          Serial.println("Test ac sinyali....");
@@ -6054,12 +6070,51 @@ void tr_mission_task(void *arg)
       vTaskDelay(10 / portTICK_RATE_MS);
    }
 }
+static uint16_t crc16_ccitt_false(const uint8_t *data, size_t len)
+{
+   uint16_t crc = 0xFFFF;
+
+   for (size_t i = 0; i < len; i++)
+   {
+      crc ^= ((uint16_t)data[i] << 8);
+      for (uint8_t b = 0; b < 8; b++)
+      {
+         if (crc & 0x8000)
+            crc = (uint16_t)((crc << 1) ^ 0x1021);
+         else
+            crc = (uint16_t)(crc << 1);
+      }
+   }
+   return crc;
+}
+
+/* Frame format:
+ * [payload ...][CRC_L][CRC_H]   (CRC is over payload bytes only)
+ *
+ * return:
+ *   true  -> crc OK
+ *   false -> crc FAIL / invalid len
+ */
+bool frame_crc_check_ccitt(const uint8_t *frame, size_t frame_len)
+{
+   if (frame == NULL || frame_len < 3) // en az 1 byte payload + 2 byte crc
+      return false;
+
+   size_t payload_len = frame_len - 2;
+
+   uint16_t crc_calc = crc16_ccitt_false(frame, payload_len);
+
+   uint16_t crc_rx = (uint16_t)frame[payload_len] |
+                     (uint16_t)((uint16_t)frame[payload_len + 1] << 8); // LSB first
+
+   return (crc_calc == crc_rx);
+}
 void hexDump(const char *msg, const uint8_t *data, int len)
 {
    // printf("%s (%d bytes): ", msg, len);
    // for (int i = 0; i < len; i++)
    // {
-   //  printf("%d ", data[i]);
+   //    printf("%d ", data[i]);
    // }
    // printf("\n");
 }
@@ -6078,6 +6133,15 @@ void uart_rx_task(void *arg)
       if (len > 0)
       {
          hexDump("RX RAW", buf, len);
+         if (frame_crc_check_ccitt(buf, len))
+         {
+            // printf("Crc Dogru\n");
+         }
+         else
+         {
+            printf("Crc yanlıs!\n");
+            continue;
+         }
          frame_parser_push(buf, len); // ADIM 5'te yazacağız
       }
    }
@@ -6209,8 +6273,8 @@ void handle_ack_frame(uint8_t *payload, int len)
 
    if (rx_local[client_dur_index] == 1 && hareket_sinyali == kapi_kapat_sinyali)
    {
-   //   hareket_sinyali = kapi_bosta_sinyali;
-       ac_flag = true;
+      //   hareket_sinyali = kapi_bosta_sinyali;
+      ac_flag = true;
       bluetooth_kapi_ac = true;
       motor_surme(200);
       printf("slaveden kapi dur geldi\n");
@@ -6224,6 +6288,7 @@ void handle_ack_frame(uint8_t *payload, int len)
 void handle_data_frame(uint8_t *payload, int len)
 {
    // ---- RX SNAPSHOT (QUEUE) ----
+
    if (q_rx_frame)
    {
       DoorFrame_t f{};
@@ -6345,7 +6410,9 @@ void send_ack_with_status(void)
    memcpy(&ack_tx[4], ack_payload_tx, SERIAL_SIZE);
 
    hexDump("CLIENT TX ACK", ack_tx, sizeof(ack_tx));
-
+   uint16_t crc = crc16_ccitt_false(ack_tx, sizeof(ack_tx) - 2);
+   ack_tx[sizeof(ack_tx) - 2] = (uint8_t)(crc & 0xFF);        // L
+   ack_tx[sizeof(ack_tx) - 1] = (uint8_t)((crc >> 8) & 0xFF); // H
    uart_write_bytes(UART_PORT, (const char *)ack_tx, sizeof(ack_tx));
 }
 
@@ -6392,6 +6459,9 @@ void master_send_task(void *arg)
       uart_ack_geldi = false;
 
       hexDump("SERVER TX tx_data", tx, 3 + SERIAL_SIZE);
+      uint16_t crc = crc16_ccitt_false(tx, sizeof(tx) - 2);
+      tx[sizeof(tx) - 2] = (uint8_t)(crc & 0xFF);        // L
+      tx[sizeof(tx) - 1] = (uint8_t)((crc >> 8) & 0xFF); // H
       uart_write_bytes(UART_NUM_1, (const char *)tx, 3 + SERIAL_SIZE);
 
       unsigned long t0 = millis();
