@@ -132,9 +132,10 @@ typedef struct
 } TxUpdate_t;
 
 // Queues
-static QueueHandle_t q_rx_frame = NULL;  // DATA frame snapshot (en son gelen)
-static QueueHandle_t q_ack_frame = NULL; // ACK frame snapshot (en son gelen)
-static QueueHandle_t q_tx_update = NULL; // TX data üzerinde yapılacak değişiklikler
+static QueueHandle_t q_rx_frame = NULL;     // DATA frame snapshot (en son gelen)
+static QueueHandle_t q_ack_frame = NULL;    // ACK frame snapshot (en son gelen)
+static QueueHandle_t q_ack_frame_tx = NULL; // ACK frame snapshot (en son gelen)
+static QueueHandle_t q_tx_update = NULL;    // TX data üzerinde yapılacak değişiklikler
 
 /*******************BLUETOOTH*****************/
 
@@ -403,6 +404,13 @@ static inline void door_tx_set(uint8_t index, uint8_t value)
    TxUpdate_t u{index, value};
    (void)xQueueSend(q_tx_update, &u, 0); // block yok
 }
+static inline void door_ack_tx_set(uint8_t index, uint8_t value)
+{
+   if (!q_ack_frame_tx)
+      return;
+   TxUpdate_t u{index, value};
+   (void)xQueueSend(q_ack_frame_tx, &u, 0); // block yok
+}
 static inline bool door_rx_peek(uint8_t out[SERIAL_SIZE])
 {
    if (!q_rx_frame)
@@ -655,25 +663,26 @@ void setup()
    test_func(); // güncelleme ve ble işlemlerinden sonra test yaptırıyoruz ki sıkıntı çıktığı taktıirde güncelleme yapabilelim
                 // ---- QUEUE CREATE ----
    // En son DATA frame'i tut (overwrite). 1 eleman yeterli.
-   q_rx_frame = xQueueCreate(1, sizeof(DoorFrame_t));
-   q_ack_frame = xQueueCreate(1, sizeof(DoorFrame_t));
+   q_rx_frame = xQueueCreate(1, sizeof(DoorFrame_t));     // slave in aldığı data
+   q_ack_frame = xQueueCreate(1, sizeof(DoorFrame_t));    // masterın aldığı ack
+   q_ack_frame_tx = xQueueCreate(1, sizeof(DoorFrame_t)); // masterın aldığı ack
 
    // TX update queue: bir turda birden fazla bit/byte güncellemesi gelebilir
-   q_tx_update = xQueueCreate(32, sizeof(TxUpdate_t));
+   q_tx_update = xQueueCreate(32, sizeof(TxUpdate_t)); // mastereın gönderdiği data
 
-   if (!q_rx_frame || !q_ack_frame || !q_tx_update)
+   if (!q_rx_frame || !q_ack_frame || !q_ack_frame_tx || !q_tx_update)
    {
       Serial.println("QUEUE create FAILED!");
       while (1)
          vTaskDelay(1000 / portTICK_PERIOD_MS);
    }
 
-   xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, NULL, 10, NULL, 0);
+   xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, NULL, 14, NULL, 0);
    if (kapi_rutbesi == MASTER)
    {
       xTaskCreatePinnedToCore(master_send_task, "master_send_task", 4096, NULL, 13, NULL, 0);
    }
-   xTaskCreate(seri_yazdir, "seri_yazdir", 1024 * 2, NULL, 1, &seri_yazdir_arg);
+   // xTaskCreate(seri_yazdir, "seri_yazdir", 1024 * 2, NULL, 1, &seri_yazdir_arg);
    xTaskCreate(fault_task, "fault_task", 2048 * 4, NULL, 12, &fault_task_arg);
    xTaskCreatePinnedToCore(hareket_kontrol, "hareket_kontrol", 2048 * 4, NULL, 11, &hareket_kontrol_arg, 1);
    xTaskCreate(ac_task, "ac_task", 2048 * 10, NULL, 10, &ac_task_arg);
@@ -1661,6 +1670,7 @@ void kapi_ac_fonksiyonu()
             kapi_ac_sayac--;
             // actan_kapata = true;
             door_tx_set(client_baski_index, 1);
+            client_baski_flag = true;
             uint16_t counter = 0;
             if (ref_adim_sayisi > adim_sayisi)
                printf("diger kapi bekleniyor\n");
@@ -1668,8 +1678,11 @@ void kapi_ac_fonksiyonu()
             {
                vTaskDelay(10 / portTICK_RATE_MS);
                counter++;
+               door_tx_set(client_baski_index, 1);
+               client_baski_flag = true;
             }
             door_tx_set(client_baski_index, 0);
+            client_baski_flag = false;
             kapat_flag = true;
 
             // eeproma_yaz_istegi = 1;
@@ -1756,7 +1769,7 @@ void kapi_ac_fonksiyonu()
             while (adim_sayisi >= (maksimum_kapi_boyu - 10) && (rx_local[client_kapa_index] == 0))
             {
                zaman_timeout++;
-               if (zaman_timeout <= (acik_kalma_suresi + (2000 * (!client_baski_flag) * (!kapanirken_engel_algiladi_flag)))) // master baski yediyse süreyi kendi tutar. yoksa mastere 5 sn bekler
+               if (zaman_timeout <= (acik_kalma_suresi + (2000 * (!rx_local[client_baski_index] * (!kapanirken_engel_algiladi_flag))))) // master baski yediyse süreyi kendi tutar. yoksa mastere 5 sn bekler
                {
                   vTaskDelay(10 / portTICK_RATE_MS);
                   if (digitalRead(ac_pini) == 1 || digitalRead(asansor_ac_pini) == 1)
@@ -1847,9 +1860,13 @@ void kapi_kapa_fonksiyonu()
 
    if (kapat_time_out_flag)
    {
-      if (kapanirken_engel_algiladi_flag)
+      uint8_t rx_local[SERIAL_SIZE];
+      door_rx_peek(rx_local);
+      if (kapanirken_engel_algiladi_flag || rx_local[client_baski_index])
       {
          kapanirken_engel_algiladi_flag = false;
+         // door_tx_set(client_kapanirken_baski_index, 0);
+         door_tx_set(client_baski_index, 0);
          rpm_haritasi_olustur_engelli_kapat();
       }
       else
@@ -1984,6 +2001,8 @@ void kapi_kapa_fonksiyonu()
                   fault_siniri = 0; // fault ledi kesmesi sistemi durdurma sayacı sıfırlandı
                   baski_duty = kapanma_baski_gucu_min;
                   kapanirken_engel_algiladi_flag = false;
+                  door_tx_set(client_baski_index, 0);
+                  // door_tx_set(client_kapanirken_baski_index, 0);
                   kapanirken_engel_var = false;
                   memset(bobin_ortalama, 0, 6); // başlangıçta ortalama değerleri tutan dizi sıfırlandı.
                   adim_sayisi = 0;
@@ -2026,7 +2045,12 @@ void kapi_kapa_fonksiyonu()
                      if (kapi_rutbesi == MASTER)
                      {
                         door_tx_set(client_dur_index, 1);
-                        Serial.println("Slave dur komutu gonderildi.");
+                        Serial.println("Slave e dur komutu gonderildi.");
+                     }
+                     else
+                     {
+                        door_ack_tx_set(client_dur_index, 1);
+                        Serial.println("Master a dur komutu gonderildi.");
                      }
                   }
                }
@@ -2066,6 +2090,8 @@ void kapi_kapa_fonksiyonu()
                   bluetooth_kapi_ac = true;
                   engel_algilandi_flag = true;
                   kapanirken_engel_algiladi_flag = true;
+                  door_tx_set(client_baski_index, 1);
+                  // door_tx_set(client_kapanirken_baski_index, 1);
                   kapanirken_engel_var = true;
                   baski_adimi = adim_sayisi;
                   /*************************************/
@@ -4175,8 +4201,8 @@ void eeprom_oku_fn()
    {
       printf("iki_kapi_aci_farki_____________________: %d \n", kilit_birakma_noktasi);
    }
-iki_kapi_aci_farki = 0; 
-printf("iki_kapi_aci_farki deneme_____________________: %d \n", kilit_birakma_noktasi);
+   iki_kapi_aci_farki = 0;
+   printf("iki_kapi_aci_farki deneme_____________________: %d \n", kilit_birakma_noktasi);
 
    acil_stop_sayici = EEPROM.read(82) + EEPROM.read(83) * 256;
    printf("acil_stop_sayici_____________: %d \n", acil_stop_sayici);
@@ -5688,6 +5714,8 @@ void test_func()
             hesaplanan = bekleme_duty;
             status_led_delay = 500;
             kapanirken_engel_algiladi_flag = false;
+            door_tx_set(client_baski_index, 1);
+            // door_tx_set(client_kapanirken_baski_index, 0);
             if (setup_flag == true)
             {
                vTaskResume(ac_task_arg);
@@ -6158,7 +6186,35 @@ void handle_ack_frame(uint8_t *payload, int len)
    // ---- LOCAL PARSE ----
    uint8_t rx_local[SERIAL_SIZE] = {0};
    memcpy(rx_local, payload, min(len, (int)SERIAL_SIZE));
+   if (rx_local[client_baski_index] == 1 && (hareket_sinyali != kapi_bosta_sinyali))
+   {
+      /*açılırken veya kapanırken tek falg set ettim
+      kapanırken tanıma hızında kapatsın master diye */
+      kapanirken_engel_algiladi_flag = 1;
+      // client_baski_flag = 1;
+   }
+   // if (rx_local[client_ac_index] == 1)
+   // {
+   //    ac_flag = true;
+   //    bluetooth_kapi_ac = true;
+   //    printf("slaveden kapi ac geldi\n");
+   // }
 
+   // if (rx_local[client_kapa_index] == 1)
+   // {
+   //    bluetooth_kapi_kapa = true;
+   //    kapat_flag = true;
+   //    printf("kapı kapat geldi\n");
+   // }
+
+   if (rx_local[client_dur_index] == 1 && hareket_sinyali == kapi_kapat_sinyali)
+   {
+   //   hareket_sinyali = kapi_bosta_sinyali;
+       ac_flag = true;
+      bluetooth_kapi_ac = true;
+      motor_surme(200);
+      printf("slaveden kapi dur geldi\n");
+   }
    // ACK içinden sadece GEREKLİ alanları çek
    ref_adim_sayisi =
        (rx_local[client_adim_sayisi_MSB_index] << 8) |
@@ -6197,31 +6253,31 @@ void handle_data_frame(uint8_t *payload, int len)
    {
       ac_flag = true;
       bluetooth_kapi_ac = true;
-      printf("kapı aç geldi\n");
+      printf("masterdan kapi ac geldi\n");
    }
 
    if (rx_local[client_kapa_index] == 1)
    {
       bluetooth_kapi_kapa = true;
       kapat_flag = true;
-      printf("kapı kapat geldi\n");
+      printf("masterdan kapi kapat geldi\n");
    }
 
    if (rx_local[client_dur_index] == 1)
    {
       hareket_sinyali = kapi_bosta_sinyali;
       motor_surme(200);
-      printf("kapı dur geldi\n");
+      printf("masterdan kapi dur geldi\n");
    }
-   if (rx_local[client_baski_index] == 1)
-   {
-      client_baski_flag = true;
-      printf("kapı baski geldi\n");
-   }
-   else
-   {
-      client_baski_flag = false;
-   }
+   // if (rx_local[client_baski_index] == 1)
+   // {
+   //    client_baski_flag = true;
+   //    printf("kapı baski geldi\n");
+   // }
+   // else
+   // {
+   //    client_baski_flag = false;
+   // }
 
    // ---- PARAMETRELER ----
    Max_RPM = double(rx_local[client_max_rpm_index]) * hiz_katsayisi;
@@ -6250,40 +6306,47 @@ void handle_data_frame(uint8_t *payload, int len)
    ref_adim_sayisi =
        (rx_local[client_adim_sayisi_MSB_index] << 8) |
        rx_local[client_adim_sayisi_LSB_index];
-   if (rx_local[client_kapanirken_baski_index] == true)
-      kapanirken_engel_algiladi_flag = rx_local[client_kapanirken_baski_index];
 }
 
 void send_ack_with_status(void)
 {
-   uint8_t ack[4 + SERIAL_SIZE];
-   uint8_t ack_payload[SERIAL_SIZE] = {0};
+   uint8_t ack_tx[4 + SERIAL_SIZE];
+   uint8_t ack_payload_tx[SERIAL_SIZE] = {0};
 
    // ---- ACK PAYLOAD (LOCAL) ----
    // Sadece gerçekten ACK'te gitmesi gereken alanları doldur
-
-   ack_payload[client_adim_sayisi_MSB_index] =
+   if (q_ack_frame_tx)
+   {
+      TxUpdate_t u;
+      // queue'da biriken tüm güncellemeleri uygula
+      while (xQueueReceive(q_ack_frame_tx, &u, 0) == pdTRUE)
+      {
+         if (u.index < SERIAL_SIZE)
+            ack_payload_tx[u.index] = u.value;
+      }
+   }
+   ack_payload_tx[client_adim_sayisi_MSB_index] =
        (adim_sayisi >> 8) & 0xFF;
 
-   ack_payload[client_adim_sayisi_LSB_index] =
+   ack_payload_tx[client_adim_sayisi_LSB_index] =
        adim_sayisi & 0xFF;
 
    // İleride gerekirse:
-   // ack_payload[client_kilit_index] = kilit_durumu;
+   ack_payload_tx[client_baski_index] = kapanirken_engel_algiladi_flag | client_baski_flag;
    // ack_payload[client_fault_index] = fault_flag;
    // ack_payload[client_hareket_index] = hareket_sinyali;
 
    // ---- FRAME ----
-   ack[0] = 0xAA;
-   ack[1] = 0x55;
-   ack[2] = 0x01;        // ACK
-   ack[3] = SERIAL_SIZE; // payload length
+   ack_tx[0] = 0xAA;
+   ack_tx[1] = 0x55;
+   ack_tx[2] = 0x01;        // ACK
+   ack_tx[3] = SERIAL_SIZE; // payload length
 
-   memcpy(&ack[4], ack_payload, SERIAL_SIZE);
+   memcpy(&ack_tx[4], ack_payload_tx, SERIAL_SIZE);
 
-   hexDump("CLIENT TX ACK", ack, sizeof(ack));
+   hexDump("CLIENT TX ACK", ack_tx, sizeof(ack_tx));
 
-   uart_write_bytes(UART_PORT, (const char *)ack, sizeof(ack));
+   uart_write_bytes(UART_PORT, (const char *)ack_tx, sizeof(ack_tx));
 }
 
 void master_send_task(void *arg)
@@ -6305,14 +6368,6 @@ void master_send_task(void *arg)
             if (u.index < SERIAL_SIZE)
                tx_data[u.index] = u.value;
          }
-         // send_counter++;
-         // if (send_counter > 2)
-         // {
-         //    door_tx_set(client_ac_index, 0);
-         //    door_tx_set(client_kapa_index, 0);
-         //    door_tx_set(client_dur_index, 0);
-         //    send_counter=0;
-         // }
       }
 
       tx[0] = 0xFF;
@@ -6327,10 +6382,10 @@ void master_send_task(void *arg)
       tx_data[client_kuvvet_siniri_index] = EEPROM.read(21);
       tx_data[client_push_run_index] = push_run_flag;
       tx_data[client_baski_gucu_index] = kapama_baski_gucu / kapama_baski_gucu_ks;
-      tx_data[client_derece_index] = kapi_acma_derecesi / 2;                   //*
-      tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF;       //*
-      tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;              //*
-      tx_data[client_kapanirken_baski_index] = kapanirken_engel_algiladi_flag; //*
+      tx_data[client_derece_index] = kapi_acma_derecesi / 2;             //*
+      tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF; //*
+      tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;        //*
+      // tx_data[client_kapanirken_baski_index] = kapanirken_engel_algiladi_flag; //*
 
       memcpy(&tx[3], tx_data, SERIAL_SIZE);
 

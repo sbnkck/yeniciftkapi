@@ -42,7 +42,7 @@ int kapi_acma_derecesi = 150;
 #define set_volatage_factor 150 // voltaj değişimin duty e etkileceğei oranın katsayısı
 #define hesaplanan_min_duty 100
 #define hesaplanan_max_duty 200
-#define kapanma_guncelleme_noktasi 100
+#define kapanma_guncelleme_noktasi 50
 #define akim_hesaplanan_siniri 400
 #define acma_siniri 50
 #define motor_i_t_max_duty 2000 // motor ilk tahrikte akımı sınırlamak için
@@ -63,10 +63,7 @@ uint16_t baski_duty = 0;
 #define kapi_kapat_sinyali 1
 #define kapi_bosta_sinyali 2
 /*serverden gelen dataların dizi indexi*/
-#define client_max_rpm_index 16
-#define client_adim_sayisi_MSB_index 17
-#define client_adim_sayisi_LSB_index 18
-#define client_kapanirken_baski_index 19
+// #define client_kapanirken_baski_index 19
 #define client_kapama_max_rpm_index 3
 #define client_mentese_index 4
 #define client_acil_stop_index 5
@@ -80,6 +77,9 @@ uint16_t baski_duty = 0;
 #define client_kapa_index 13  // buton için
 #define client_dur_index 14   // buton için
 #define client_kilit_index 15 // kiliti geçip geçmediğini söyleyecek
+#define client_max_rpm_index 16
+#define client_adim_sayisi_MSB_index 17
+#define client_adim_sayisi_LSB_index 18
 #define client_baski_index 19 // kiliti geçip geçmediğini söyleyecek
 bool client_baski_flag = false;
 #ifdef AKIM_V2
