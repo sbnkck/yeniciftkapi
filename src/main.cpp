@@ -452,7 +452,7 @@ static inline float step_sync_duty_factor(int16_t master_step,
    }
 
    // Senkron kopmuş → karışma
-   if (abs(diff) > 200)
+   if (abs(diff) > 50)
       return 1.0f;
 
    // Deadband

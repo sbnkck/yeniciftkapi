@@ -14,8 +14,8 @@ uint8_t rx_data[SERIAL_SIZE] = {0};
 volatile bool uart_ack_geldi = false;
 uint16_t ref_adim_sayisi = 0;
 #define DATA_TIMEOUT 100
-#define STEP_SYNC_WINDOW 40 // adım
-#define STEP_SYNC_DEADBAND 10
+#define STEP_SYNC_WINDOW 25 // adım
+#define STEP_SYNC_DEADBAND 0
 #define STEP_SYNC_MAX_GAIN 0.01f // duty %20 max değişsin
 constexpr float adim_derece_carpani = 5.294859f;
 
