@@ -12,7 +12,7 @@ uint8_t kapi_rutbesi = MASTER;
 uint8_t tx_data[SERIAL_SIZE] = {0};
 uint8_t rx_data[SERIAL_SIZE] = {0};
 volatile bool uart_ack_geldi = false;
-uint16_t ref_adim_sayisi = 0;
+int16_t ref_adim_sayisi = 0;
 #define DATA_TIMEOUT 100
 #define STEP_SYNC_WINDOW 25 // adım
 #define STEP_SYNC_DEADBAND 0
@@ -32,6 +32,7 @@ uint16_t iki_kapi_aci_farki = 0;
 #define kapi_ac 0
 #define kapi_kapa 1
 int kapi_acma_derecesi = 150;
+#define REF_ADIM_CEK ref_adim_sayisi =(rx_local[client_adim_sayisi_MSB_index] << 8) | rx_local[client_adim_sayisi_LSB_index]
 #define tur_sayisi 24
 #define kapat_hareketi_ofset 5
 #define max_duty 1500
@@ -81,6 +82,8 @@ uint16_t baski_duty = 0;
 #define client_adim_sayisi_MSB_index 17
 #define client_adim_sayisi_LSB_index 18
 #define client_baski_index 19 // kiliti geçip geçmediğini söyleyecek
+#define client_iki_kapi_aci_farki_index 20 
+
 bool client_baski_flag = false;
 #ifdef AKIM_V2
 #define test_time 50 // test func bobinlere akım uygulama süresi
@@ -98,7 +101,6 @@ uint16_t acil_stop_sayici = 0;
 bool ble_data_geldi = false;
 bool acil_stop_client = true; // planalandi ama kullanilmadi
 bool baski_led_flag = false;  // kapi baski aldığında ledi uzun süre yanık tutmak için
-bool mod_flag = tek_kanat;    // server tarafında client baglaninca cift kanat moduna cekilerek serverincift kanatta oldugunu belirler
 uint8_t mod = cift_kanat;     // client de cift kanat moduna alınması yeterli başalngıçta kontrol ediliyor
 bool demo_modu_flag = false;
 bool konsol_aktif_flag = false; // uzaktan print işlemlerini takip için
@@ -164,7 +166,7 @@ int hedefRPMharitasi_kapa[3000];
 // int32_t mevcut_hedef_Sure[12];
 int acma_sonu_RPM = 100;
 int varilacak_hiz;
-double maksimum_kapi_boyu = kapi_acma_derecesi * (10000 / 821);
+double maksimum_kapi_boyu = kapi_acma_derecesi * adim_derece_carpani;
 int rampa_boy = maksimum_kapi_boyu - 400;
 int acma_baslangic_RPM = 100; // kilitten kurtuluna kadar uygulanacak rpm
 int ilk_rampa_katsayi = 30;

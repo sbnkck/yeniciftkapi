@@ -411,6 +411,16 @@ static inline void door_ack_tx_set(uint8_t index, uint8_t value)
    TxUpdate_t u{index, value};
    (void)xQueueSend(q_ack_frame_tx, &u, 0); // block yok
 }
+static inline bool door_ack_rx_peek(uint8_t out[SERIAL_SIZE])
+{
+   if (!q_ack_frame)
+      return false;
+   DoorFrame_t f;
+   if (xQueuePeek(q_ack_frame, &f, 0) != pdTRUE)
+      return false;
+   memcpy(out, f.payload, SERIAL_SIZE);
+   return true;
+}
 static inline bool door_rx_peek(uint8_t out[SERIAL_SIZE])
 {
    if (!q_rx_frame)
@@ -1187,35 +1197,6 @@ static void hareket_kontrol(void *arg)
             }
          }
       }
-
-      // else if (acil_stop_flag == true && adim_sayisi < hizlanma_boy_baslangici)
-      // {
-      // if (baski_flag)
-      // {
-      //  s1_state = digitalRead(encodera);
-      //  s2_state = digitalRead(encoderb);
-      //  s3_state = digitalRead(encoderc);
-      //  adim = ((100 * s1_state) + (10 * s2_state) + (s3_state));
-      //  eski_adim = adim;
-      //  motor_surme(kapama_baski_gucu);
-      //  vTaskDelay(10 / portTICK_RATE_MS);
-
-      //  if (adim_sayisi > acma_siniri && push_run_flag == true)
-      //  {
-      //   ac_flag = true;
-      //   bluetooth_kapi_ac = true;
-      //   baski_flag = false;
-      //  }
-      //  if (kapi_rutbesi == SLAVE&& (adim_sayisi < 200))
-      //  {
-      //   server_data[0] = 121;
-      //   server_data[1] = 123;
-      //   server_data[client_kilit_index] = 1;
-
-      //   pCharacteristic_2->setValue(server_data, sizeof(server_data));
-      //  }
-      // }
-      // }
    }
 }
 
@@ -1633,11 +1614,6 @@ void kapi_ac_fonksiyonu()
       while (hareket_sinyali != kapi_kapat_sinyali)
       {
 
-         // if (adim_sayisi < hizlanma_boy_baslangici + 150 && count > 5) // iki kanatlıda baskı yediği zaman diğer kanata da dur diyor
-         // {
-         //  client_data[client_dur_index] = 1;
-         // }
-
          count++;
          //    duty=motor_baslangic_duty;
          // bobin_eski_sure=micros();
@@ -1672,10 +1648,36 @@ void kapi_ac_fonksiyonu()
             door_tx_set(client_baski_index, 1);
             client_baski_flag = true;
             uint16_t counter = 0;
+            uint8_t rx_local[SERIAL_SIZE];
+            if (kapi_rutbesi == SLAVE)
+               door_rx_peek(rx_local);
+            if (kapi_rutbesi == MASTER)
+               door_ack_rx_peek(rx_local);
+            REF_ADIM_CEK;
             if (ref_adim_sayisi > adim_sayisi)
                printf("diger kapi bekleniyor\n");
-            while ((ref_adim_sayisi > adim_sayisi) && (counter < 2000))
+            if (kapi_rutbesi == SLAVE)
             {
+               printf("slave master e   bekliyor\n");
+               while (kapat_flag == false && (counter < 2000))
+               {
+                  vTaskDelay(10 / portTICK_RATE_MS);
+                  counter++;
+               }
+            }
+            counter = 0;
+            if (kapi_rutbesi == SLAVE)
+               door_rx_peek(rx_local);
+            if (kapi_rutbesi == MASTER)
+               door_ack_rx_peek(rx_local);
+            REF_ADIM_CEK;
+            while (((ref_adim_sayisi - (iki_kapi_aci_farki * adim_derece_carpani)) > adim_sayisi) && (counter < 2000))
+            {
+               if (kapi_rutbesi == SLAVE)
+                  door_rx_peek(rx_local);
+               if (kapi_rutbesi == MASTER)
+                  door_ack_rx_peek(rx_local);
+               REF_ADIM_CEK;
                vTaskDelay(10 / portTICK_RATE_MS);
                counter++;
                door_tx_set(client_baski_index, 1);
@@ -1690,7 +1692,9 @@ void kapi_ac_fonksiyonu()
 
                motor_surme(baski_duty);
                vTaskDelay(10 / portTICK_RATE_MS);
+               printf("baski yedi hafif acmaya calisiyor\n");
             }
+            printf("diger kapi geldi\n");
             door_tx_set(client_baski_index, 0);
             client_baski_flag = false;
             kapat_flag = true;
@@ -1759,12 +1763,12 @@ void kapi_ac_fonksiyonu()
                }
                else
                {
-                  while (ref_adim_sayisi > (maksimum_kapi_boyu - (iki_kapi_aci_farki * adim_derece_carpani) + 10))
-                  {
-                     door_tx_set(client_kapa_index, 1);
-                     Serial.println("Slave kapa komutu gonderildi.3");
-                     vTaskDelay(10 / portTICK_RATE_MS);
-                  }
+                  // while (ref_adim_sayisi > (maksimum_kapi_boyu - (iki_kapi_aci_farki * adim_derece_carpani) + 10))
+                  // {
+                  //    door_tx_set(client_kapa_index, 1);
+                  //    Serial.println("Slave kapa komutu gonderildi.3");
+                  //    vTaskDelay(10 / portTICK_RATE_MS);
+                  // }
 
                   // vTaskDelay(DATA_TIMEOUT / portTICK_RATE_MS);
                   break;
@@ -1793,6 +1797,21 @@ void kapi_ac_fonksiyonu()
 
                   break;
                }
+            }
+         }
+         if (kapi_rutbesi == SLAVE)
+         {
+            uint8_t rx_local[SERIAL_SIZE];
+            door_rx_peek(rx_local);
+            REF_ADIM_CEK;
+            printf("ref_adim_sayisi %d ,maksimum_kapi_boyu %.2f,iki_kapi_aci_farki %d\n",ref_adim_sayisi,maksimum_kapi_boyu,rx_local[client_iki_kapi_aci_farki_index]);
+            while (ref_adim_sayisi > (maksimum_kapi_boyu - (rx_local[client_iki_kapi_aci_farki_index] * adim_derece_carpani) + 10))
+            {
+               // door_tx_set(client_kapa_index, 1);
+               door_rx_peek(rx_local);
+               REF_ADIM_CEK;
+               Serial.println("Slave aciyi bekliyor.");
+               vTaskDelay(10 / portTICK_RATE_MS);
             }
          }
          Serial.println("time out bitti");
@@ -1848,22 +1867,28 @@ void kapi_kapa_fonksiyonu()
    }
 
    uint8_t rx_local[SERIAL_SIZE];
-   door_rx_peek(rx_local);
-   if ((kapi_rutbesi == MASTER) &&
+   if (kapi_rutbesi == SLAVE)
+      door_rx_peek(rx_local);
+   if (kapi_rutbesi == MASTER)
+      door_ack_rx_peek(rx_local);
+   REF_ADIM_CEK;
+   if ((kapi_rutbesi == SLAVE) &&
        (ref_adim_sayisi > (kilit_birakma_noktasi * adim_derece_carpani)) &&
        (adim_sayisi < (kilit_birakma_noktasi * adim_derece_carpani)) &&
        (iki_kapi_aci_farki != 0)) // slave klit bölgesine gelmediyse
    {
-      motor_surme(200);
-      while ((ref_adim_sayisi > (kilit_birakma_noktasi * adim_derece_carpani)) && ac_flag == false) // ben kilit bölgesine geldim
+      motor_surme(bekleme_duty);
+      do
       {
          vTaskDelay(100 / portTICK_RATE_MS);
-         door_tx_set(client_kapa_index, 1);
          door_rx_peek(rx_local);
+         REF_ADIM_CEK;
          printf("kilit noktasında bekliyorum\n");
-      }
+      } while ((ref_adim_sayisi >
+                (kilit_birakma_noktasi * adim_derece_carpani)) &&
+               ac_flag == false);
    }
-   if (kapi_rutbesi == SLAVE && (adim_sayisi < (kilit_birakma_noktasi * adim_derece_carpani))) // klit bölgesine geldiysen geldiğini söyle
+   if (kapi_rutbesi == MASTER && (adim_sayisi < (kilit_birakma_noktasi * adim_derece_carpani))) // klit bölgesine geldiysen geldiğini söyle
    {
       door_tx_set(client_kilit_index, 1);
    }
@@ -2050,7 +2075,7 @@ void kapi_kapa_fonksiyonu()
             {
                if (count > 5)
                {
-                  if (adim_sayisi < hizlanma_boy_baslangici + 150)
+                  // if (adim_sayisi < hizlanma_boy_baslangici + 150)
                   {
                      if (kapi_rutbesi == MASTER)
                      {
@@ -2591,11 +2616,15 @@ static void ac_task(void *arg)
                if (kapi_rutbesi == MASTER)
                {
                   int timeout = 0;
+                  uint8_t rx_local[SERIAL_SIZE];
+                  door_ack_rx_peek(rx_local);
+                  REF_ADIM_CEK;
                   while (((ref_adim_sayisi) < ((iki_kapi_aci_farki * adim_derece_carpani))) && timeout < 50)
                   {
                      door_tx_set(client_ac_index, 1);
                      timeout++;
-
+                     door_ack_rx_peek(rx_local);
+                     REF_ADIM_CEK;
                      vTaskDelay(DATA_TIMEOUT / portTICK_RATE_MS);
                      Serial.println("Slave acmasi bekleniyor");
                   }
@@ -3044,8 +3073,8 @@ void ble_data_guncelle()
       //  ble_yollanan_dizi_global[101] = asiri_akim_siniri;
       //  ble_yollanan_dizi_global[102] = maksimum_kapi_boyu;
 
-      // ble_yollanan_dizi_global[103] = a_hata_durumu;
-      // ble_yollanan_dizi_global[104] = b_hata_durumu;
+      ble_yollanan_dizi_global[107] = ble_alinan_deger * 2;
+      ble_yollanan_dizi_global[108] = kapi_rutbesi;
       ble_yollanan_dizi_global[115] = a_hata_durumu;
       ble_yollanan_dizi_global[116] = b_hata_durumu;
       ble_yollanan_dizi_global[117] = c_hata_durumu;
@@ -3439,18 +3468,8 @@ void ble_data_al()
          break;
       case 79:
          mod = ble_alinan_deger;
-         kapi_rutbesi = mod;
-         Serial.print("BLE Al Fn: kapi_rutbesi = ");
-         Serial.println(kapi_rutbesi);
-         //   eeproma_yaz_istegi = 1;
-
-         //       while (eeproma_yaz_istegi == 1)
-         //       {
-         //          vTaskDelay(1000 / portTICK_PERIOD_MS);
-         //       }
-
-         //       esp_restart();
-
+         Serial.print("BLE Al Fn: mod = ");
+         Serial.println(mod);
          break;
       case 80:
          demo_modu_flag = ble_alinan_deger;
@@ -3529,15 +3548,16 @@ void ble_data_al()
          esp_restart();
 
          break;
-         // case 106:
-         //    kapi_rutbesi = ble_alinan_deger;
-         //    Serial.print("BLE Al Fn: kapi_rutbesi = ");
-         //    Serial.println(kapi_rutbesi);
-         break;
       case 107:
-         iki_kapi_aci_farki = ble_alinan_deger;
+         iki_kapi_aci_farki = ble_alinan_deger / 2;
+         Serial.print("BLE Al Fn: iki_kapi_aci_farki = ");
+         Serial.println(iki_kapi_aci_farki * 2);
+         break;
+      case 108:
+         kapi_rutbesi = ble_alinan_deger;
          Serial.print("BLE Al Fn: kapi_rutbesi = ");
          Serial.println(kapi_rutbesi);
+
          break;
       }
       if (adres == 29)
@@ -4143,12 +4163,23 @@ void eeprom_oku_fn()
       printf("test_modu_aktif_____________________: %d \n", test_modu_aktif);
    }
    mod = EEPROM.read(79);
-   kapi_rutbesi = mod;
    if (mod > 200)
    {
       mod = tek_kanat; //  Varsayılan Değer  tek kanat
       EEPROM.write(79, mod);
       mod = EEPROM.read(79);
+      printf("vrsyln mod_____________________: %d \n", mod);
+   }
+   else
+   {
+      printf("mod_____________________: %d \n", mod);
+   }
+   kapi_rutbesi = EEPROM.read(108);
+   if (kapi_rutbesi > 200)
+   {
+      kapi_rutbesi = SLAVE; //  Varsayılan Değer  tek kanat
+      EEPROM.write(108, kapi_rutbesi);
+      kapi_rutbesi = EEPROM.read(108);
       printf("kapi_rutbesi_____________________: SLAVE \n");
    }
    else
@@ -4209,7 +4240,7 @@ void eeprom_oku_fn()
    iki_kapi_aci_farki = EEPROM.read(107);
    if (iki_kapi_aci_farki > 200)
    {
-      iki_kapi_aci_farki = 0; //  Varsayılan Değer  250 adim
+      iki_kapi_aci_farki = 30;
       EEPROM.write(107, iki_kapi_aci_farki);
       iki_kapi_aci_farki = EEPROM.read(107);
       printf("iki_kapi_aci_farki_vrsyln______________: %d \n", iki_kapi_aci_farki);
@@ -4218,7 +4249,6 @@ void eeprom_oku_fn()
    {
       printf("iki_kapi_aci_farki_____________________: %d \n", iki_kapi_aci_farki);
    }
-   printf("iki_kapi_aci_farki deneme_____________________: %d \n", iki_kapi_aci_farki);
 
    acil_stop_sayici = EEPROM.read(82) + EEPROM.read(83) * 256;
    printf("acil_stop_sayici_____________: %d \n", acil_stop_sayici);
@@ -4742,7 +4772,14 @@ static void test_task(void *arg)
    {
 
       vTaskDelay(100 / portTICK_RATE_MS);
-      if (test_flag == true && hareket_sinyali != kapi_ac_sinyali && adim_sayisi < 10 && kapi_rutbesi == MASTER)
+      uint8_t rx_local[SERIAL_SIZE];
+      door_ack_rx_peek(rx_local);
+      if (kapi_rutbesi == SLAVE)
+         door_rx_peek(rx_local);
+      if (kapi_rutbesi == MASTER)
+         door_ack_rx_peek(rx_local);
+      REF_ADIM_CEK;
+      if (test_flag == true && hareket_sinyali != kapi_ac_sinyali && adim_sayisi < 10 && kapi_rutbesi == MASTER && ref_adim_sayisi < 50)
       {
          vTaskDelay(3000 / portTICK_RATE_MS);
          Serial.println("Test ac sinyali....");
@@ -6280,9 +6317,7 @@ void handle_ack_frame(uint8_t *payload, int len)
       printf("slaveden kapi dur geldi\n");
    }
    // ACK içinden sadece GEREKLİ alanları çek
-   ref_adim_sayisi =
-       (rx_local[client_adim_sayisi_MSB_index] << 8) |
-       rx_local[client_adim_sayisi_LSB_index];
+   REF_ADIM_CEK;
 }
 
 void handle_data_frame(uint8_t *payload, int len)
@@ -6368,9 +6403,9 @@ void handle_data_frame(uint8_t *payload, int len)
    kapi_acma_derecesi =
        double(rx_local[client_derece_index]) * 2;
 
-   ref_adim_sayisi =
-       (rx_local[client_adim_sayisi_MSB_index] << 8) |
-       rx_local[client_adim_sayisi_LSB_index];
+   REF_ADIM_CEK;
+
+   iki_kapi_aci_farki=rx_local[client_acik_kalma_suresi_index];
 }
 
 void send_ack_with_status(void)
@@ -6452,6 +6487,7 @@ void master_send_task(void *arg)
       tx_data[client_derece_index] = kapi_acma_derecesi / 2;             //*
       tx_data[client_adim_sayisi_MSB_index] = (adim_sayisi >> 8) & 0xFF; //*
       tx_data[client_adim_sayisi_LSB_index] = adim_sayisi & 0xFF;        //*
+      tx_data[client_iki_kapi_aci_farki_index] = iki_kapi_aci_farki & 0xFF;        //*
       // tx_data[client_kapanirken_baski_index] = kapanirken_engel_algiladi_flag; //*
 
       memcpy(&tx[3], tx_data, SERIAL_SIZE);
